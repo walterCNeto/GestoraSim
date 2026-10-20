@@ -1,3 +1,4 @@
 .venv/
 data/sim/
 __pycache__/
+*.egg-info/
