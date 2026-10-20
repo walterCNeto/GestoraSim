@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: gestorasim
+Version: 0.1.0
+Summary: MVP educacional de sistema de gestão de ativos (dados 100% simulados)
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: pandas>=2.0
+Requires-Dist: numpy>=1.26
+Requires-Dist: pydantic>=2.0
+Requires-Dist: pyarrow>=14
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
