@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='utf-8'?>
+<arquivoposicao_4_01>
+  <fundo>
+    <header cnpj="99.000.001/0001-01" nome="Sim Ações FIA" dtposicao="20230109" cnpjadm="99.999.999/0001-99" nomeadm="Administradora Sim S.A." valorcota="0.9833032836" quantidade="100347563.70331253" patliq="98672088.88930361" />
+    <caixa saldo_disponivel="4375019.83393293" saldo_projetado="5106066.528558504" />
+    <acoes>
+      <acao codativo="IOTA3" qtdisponivel="150000" puposicao="57.49385707820226" valorfin="8624078.561730338" />
+      <acao codativo="KAPA3" qtdisponivel="111900" puposicao="59.05034354542752" valorfin="6607733.44273334" />
+      <acao codativo="MIUU4" qtdisponivel="288400" puposicao="29.954126772190246" valorfin="8638770.161099667" />
+      <acao codativo="NIUU3" qtdisponivel="103100" puposicao="69.94290920896384" valorfin="7211113.939444172" />
+      <acao codativo="OMIC3" qtdisponivel="117900" puposicao="71.88414409513516" valorfin="8475140.588816434" />
+      <acao codativo="SIGM3" qtdisponivel="468900" puposicao="14.036769722555773" valorfin="6581841.322906402" />
+      <acao codativo="TETA3" qtdisponivel="246100" puposicao="34.815664018879396" valorfin="8568134.915046219" />
+      <acao codativo="UPSI4" qtdisponivel="84300" puposicao="81.88943129865123" valorfin="6903279.058476299" />
+      <acao codativo="XIII3" qtdisponivel="162800" puposicao="77.66705766706677" valorfin="12644196.98819847" />
+      <acao codativo="ZETA3" qtdisponivel="280500" puposicao="30.351341288493717" valorfin="8513551.231422488" />
+    </acoes>
+    <titpublico>
+      <titpublico codativo="LTN270104" qtdisponivel="15883" puposicao="635.2103482242597" valorfin="10089045.960845917" />
+      <titpublico codativo="NTNB260817" qtdisponivel="1022" puposicao="973.5846822993049" valorfin="995003.5453098896" />
+    </titpublico>
+    <debenture />
+    <futuros />
+    <provisao>
+      <item tipo="ADM" valor="38743.71636074054" />
+      <item tipo="PERFORMANCE" valor="247123.63892378184" />
+      <item tipo="RESGATES_A_PAGAR" valor="0.0" />
+    </provisao>
+    <eventos />
+  </fundo>
+</arquivoposicao_4_01>

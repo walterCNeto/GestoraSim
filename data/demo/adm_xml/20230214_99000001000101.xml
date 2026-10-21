@@ -1,0 +1,35 @@
+<?xml version='1.0' encoding='utf-8'?>
+<arquivoposicao_4_01>
+  <fundo>
+    <header cnpj="99.000.001/0001-01" nome="Sim Ações FIA" dtposicao="20230214" cnpjadm="99.999.999/0001-99" nomeadm="Administradora Sim S.A." valorcota="0.9379345926" quantidade="106495515.57724549" patliq="99885828.01266904" />
+    <caixa saldo_disponivel="4988088.339973867" saldo_projetado="4983303.7740345495" />
+    <acoes>
+      <acao codativo="GAMA4" qtdisponivel="164800" puposicao="21.1209679622706" valorfin="3480735.520182195" />
+      <acao codativo="IOTA3" qtdisponivel="157100" puposicao="49.32407295387022" valorfin="7748811.861053011" />
+      <acao codativo="KAPA3" qtdisponivel="134600" puposicao="63.73652729642248" valorfin="8578936.574098466" />
+      <acao codativo="MIUU4" qtdisponivel="285300" puposicao="27.40846758951467" valorfin="7819635.803288536" />
+      <acao codativo="NIUU3" qtdisponivel="91300" puposicao="65.73521811898652" valorfin="6001625.414263469" />
+      <acao codativo="OMIC3" qtdisponivel="127200" puposicao="64.76844521117395" valorfin="8238546.230861327" />
+      <acao codativo="SIGM3" qtdisponivel="601200" puposicao="12.258634148938807" valorfin="7369890.850342011" />
+      <acao codativo="TETA3" qtdisponivel="301200" puposicao="34.910700710276465" valorfin="10515103.05393527" />
+      <acao codativo="UPSI4" qtdisponivel="70900" puposicao="84.1999252502908" valorfin="5969774.700245618" />
+      <acao codativo="XIII3" qtdisponivel="130000" puposicao="69.03814470912673" valorfin="8974958.812186474" />
+      <acao codativo="ZETA3" qtdisponivel="260500" puposicao="27.177774765671373" valorfin="7079810.326457392" />
+    </acoes>
+    <titpublico>
+      <titpublico codativo="LTN270104" qtdisponivel="14818" puposicao="642.9266135504454" valorfin="9526886.5595905" />
+      <titpublico codativo="LTN290102" qtdisponivel="2176" puposicao="509.20446490233684" valorfin="1108028.915627485" />
+      <titpublico codativo="NTNB260817" qtdisponivel="1694" puposicao="981.323182906257" valorfin="1662361.4718431993" />
+      <titpublico codativo="NTNB280815" qtdisponivel="1" puposicao="952.8831627995038" valorfin="952.8831627995038" />
+      <titpublico codativo="NTNB300815" qtdisponivel="1029" puposicao="928.244257265477" valorfin="955163.3407261758" />
+    </titpublico>
+    <debenture />
+    <futuros />
+    <provisao>
+      <item tipo="ADM" valor="79012.36206599206" />
+      <item tipo="PERFORMANCE" valor="49685.71716343899" />
+      <item tipo="RESGATES_A_PAGAR" valor="0.0" />
+    </provisao>
+    <eventos />
+  </fundo>
+</arquivoposicao_4_01>

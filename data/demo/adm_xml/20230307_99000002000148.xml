@@ -1,0 +1,43 @@
+<?xml version='1.0' encoding='utf-8'?>
+<arquivoposicao_4_01>
+  <fundo>
+    <header cnpj="99.000.002/0001-48" nome="Sim Macro Multimercado" dtposicao="20230307" cnpjadm="99.999.999/0001-99" nomeadm="Administradora Sim S.A." valorcota="0.9902915466" quantidade="102982798.95524636" patliq="101982995.24903426" />
+    <caixa saldo_disponivel="8932010.89273022" saldo_projetado="8874448.468077015" />
+    <acoes>
+      <acao codativo="EPSI3" qtdisponivel="160900" puposicao="39.8512537205069" valorfin="6412066.723629559" />
+      <acao codativo="ETAA4" qtdisponivel="260300" puposicao="11.644937287203206" valorfin="3031177.1758589945" />
+      <acao codativo="GAMA4" qtdisponivel="324300" puposicao="20.15547100544179" valorfin="6536419.247064772" />
+      <acao codativo="IOTA3" qtdisponivel="82100" puposicao="44.02749012163913" valorfin="3614656.938986573" />
+      <acao codativo="KAPA3" qtdisponivel="18900" puposicao="64.2057066807346" valorfin="1213487.856265884" />
+      <acao codativo="LAMB3" qtdisponivel="22100" puposicao="51.88744444866701" valorfin="1146712.522315541" />
+      <acao codativo="OMIC3" qtdisponivel="100" puposicao="76.91082674887457" valorfin="7691.082674887457" />
+      <acao codativo="SIGM3" qtdisponivel="74600" puposicao="11.96067196407559" valorfin="892266.128520039" />
+      <acao codativo="TAUU3" qtdisponivel="37100" puposicao="42.55512613066777" valorfin="1578795.1794477743" />
+      <acao codativo="XIII3" qtdisponivel="21300" puposicao="68.03485394160732" valorfin="1449142.388956236" />
+      <acao codativo="ZETA3" qtdisponivel="68100" puposicao="29.35042206266243" valorfin="1998763.7424673117" />
+    </acoes>
+    <titpublico>
+      <titpublico codativo="LTN250701" qtdisponivel="29837" puposicao="773.9611352774675" valorfin="23092678.393273797" />
+      <titpublico codativo="LTN290102" qtdisponivel="998" puposicao="517.1788675493865" valorfin="516144.5098142877" />
+      <titpublico codativo="NTNB260817" qtdisponivel="621" puposicao="962.7912720534114" valorfin="597893.3799451685" />
+      <titpublico codativo="NTNB300815" qtdisponivel="21452" puposicao="913.3982100959396" valorfin="19594218.402978096" />
+      <titpublico codativo="NTNB350515" qtdisponivel="249" puposicao="885.4796318384085" valorfin="220484.42832776372" />
+    </titpublico>
+    <debenture>
+      <debenture codativo="ALEN11" qtdisponivel="3915" puposicao="1020.8603123861849" valorfin="3996668.122991914" />
+      <debenture codativo="BSAN12" qtdisponivel="5389" puposicao="1036.0665341100669" valorfin="5583362.55231915" />
+      <debenture codativo="EVAR15" qtdisponivel="2234" puposicao="1023.2813120433711" valorfin="2286010.451104891" />
+      <debenture codativo="GROD13" qtdisponivel="9174" puposicao="1021.3678577568203" valorfin="9370028.727061069" />
+    </debenture>
+    <futuros>
+      <futuro codativo="DI1F26" qtdisponivel="8" puposicao="72973.41737711824" valorfin="583787.3390169459" />
+      <futuro codativo="DI1F28" qtdisponivel="728" puposicao="58012.881124324536" valorfin="42233377.45850826" />
+    </futuros>
+    <provisao>
+      <item tipo="ADM" valor="30121.173046492608" />
+      <item tipo="PERFORMANCE" valor="0.0" />
+      <item tipo="RESGATES_A_PAGAR" valor="0.0" />
+    </provisao>
+    <eventos />
+  </fundo>
+</arquivoposicao_4_01>

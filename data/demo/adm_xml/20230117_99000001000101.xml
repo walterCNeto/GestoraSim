@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='utf-8'?>
+<arquivoposicao_4_01>
+  <fundo>
+    <header cnpj="99.000.001/0001-01" nome="Sim Ações FIA" dtposicao="20230117" cnpjadm="99.999.999/0001-99" nomeadm="Administradora Sim S.A." valorcota="0.9803206808" quantidade="101115596.90067828" patliq="99125710.79062907" />
+    <caixa saldo_disponivel="5862779.794973559" saldo_projetado="803145.1418880805" />
+    <acoes>
+      <acao codativo="GAMA4" qtdisponivel="74200" puposicao="23.629854157433254" valorfin="1753335.1784815474" />
+      <acao codativo="IOTA3" qtdisponivel="148300" puposicao="58.143731543179904" valorfin="8622715.38785358" />
+      <acao codativo="KAPA3" qtdisponivel="125600" puposicao="59.848354587332175" valorfin="7516953.336168922" />
+      <acao codativo="MIUU4" qtdisponivel="317500" puposicao="29.928495046315486" valorfin="9502297.177205168" />
+      <acao codativo="NIUU3" qtdisponivel="103100" puposicao="70.11247224847725" valorfin="7228595.888818004" />
+      <acao codativo="OMIC3" qtdisponivel="110300" puposicao="70.62147388599682" valorfin="7789548.569625449" />
+      <acao codativo="SIGM3" qtdisponivel="579200" puposicao="14.438539265237141" valorfin="8362801.9424253525" />
+      <acao codativo="TETA3" qtdisponivel="283500" puposicao="35.60968825636775" valorfin="10095346.620680256" />
+      <acao codativo="UPSI4" qtdisponivel="89300" puposicao="82.8338139438381" valorfin="7397059.585184742" />
+      <acao codativo="XIII3" qtdisponivel="128700" puposicao="73.0266483907533" valorfin="9398529.64788995" />
+      <acao codativo="ZETA3" qtdisponivel="329600" puposicao="29.35103761454094" valorfin="9674101.997752693" />
+    </acoes>
+    <titpublico>
+      <titpublico codativo="LTN270104" qtdisponivel="15478" puposicao="634.6446193313255" valorfin="9823029.418010257" />
+      <titpublico codativo="NTNB260817" qtdisponivel="1285" puposicao="973.6595902508253" valorfin="1251152.5734723106" />
+    </titpublico>
+    <debenture />
+    <futuros />
+    <provisao>
+      <item tipo="ADM" valor="84947.98377988336" />
+      <item tipo="PERFORMANCE" valor="7953.691047344344" />
+      <item tipo="RESGATES_A_PAGAR" valor="0.0" />
+    </provisao>
+    <eventos />
+  </fundo>
+</arquivoposicao_4_01>

@@ -1,0 +1,51 @@
+<?xml version='1.0' encoding='utf-8'?>
+<arquivoposicao_4_01>
+  <fundo>
+    <header cnpj="99.000.002/0001-48" nome="Sim Macro Multimercado" dtposicao="20230619" cnpjadm="99.999.999/0001-99" nomeadm="Administradora Sim S.A." valorcota="1.0016977829" quantidade="109093957.99958514" patliq="109279175.85160682" />
+    <caixa saldo_disponivel="2445084.4914408205" saldo_projetado="2592006.761553177" />
+    <acoes>
+      <acao codativo="BETA3" qtdisponivel="64700" puposicao="13.52785342198315" valorfin="875252.1164023097" />
+      <acao codativo="DELT3" qtdisponivel="100" puposicao="40.68563911737163" valorfin="4068.563911737163" />
+      <acao codativo="EPSI3" qtdisponivel="118600" puposicao="44.551053725662676" valorfin="5283754.971863593" />
+      <acao codativo="ETAA4" qtdisponivel="768300" puposicao="9.499540947453356" valorfin="7298497.3099284135" />
+      <acao codativo="GAMA4" qtdisponivel="423000" puposicao="16.878627045587386" valorfin="7139659.240283464" />
+      <acao codativo="IOTA3" qtdisponivel="82400" puposicao="42.98563229878491" valorfin="3542016.1014198763" />
+      <acao codativo="KAPA3" qtdisponivel="1300" puposicao="60.48950283177316" valorfin="78636.3536813051" />
+      <acao codativo="LAMB3" qtdisponivel="80600" puposicao="53.64478995416491" valorfin="4323770.070305691" />
+      <acao codativo="MIUU4" qtdisponivel="54900" puposicao="25.18453274086872" valorfin="1382630.8474736926" />
+      <acao codativo="OMIC3" qtdisponivel="30000" puposicao="94.59867084709228" valorfin="2837960.125412768" />
+      <acao codativo="ROOO3" qtdisponivel="5100" puposicao="101.39996585919376" valorfin="517139.82588188816" />
+      <acao codativo="SIGM3" qtdisponivel="78000" puposicao="10.89031895960508" valorfin="849444.8788491962" />
+      <acao codativo="TAUU3" qtdisponivel="29300" puposicao="32.27534470629225" valorfin="945667.599894363" />
+      <acao codativo="TETA3" qtdisponivel="28400" puposicao="39.67312720442251" valorfin="1126716.8126055992" />
+      <acao codativo="UPSI4" qtdisponivel="22600" puposicao="89.86709315555633" valorfin="2030996.3053155732" />
+      <acao codativo="XIII3" qtdisponivel="30500" puposicao="72.4099476205482" valorfin="2208503.40242672" />
+      <acao codativo="ZETA3" qtdisponivel="55600" puposicao="28.973387121386462" valorfin="1610920.3239490874" />
+    </acoes>
+    <titpublico>
+      <titpublico codativo="LTN250701" qtdisponivel="50747" puposicao="801.99794998816" valorfin="40698989.96804915" />
+      <titpublico codativo="LTN270104" qtdisponivel="394" puposicao="674.7184194844488" valorfin="265839.0572768728" />
+      <titpublico codativo="LTN290102" qtdisponivel="543" puposicao="535.9676817501306" valorfin="291030.45119032095" />
+      <titpublico codativo="NTNB260817" qtdisponivel="973" puposicao="1007.591746301575" valorfin="980386.7691514324" />
+      <titpublico codativo="NTNB300815" qtdisponivel="3330" puposicao="964.7699897366625" valorfin="3212684.065823086" />
+      <titpublico codativo="NTNB350515" qtdisponivel="134" puposicao="912.6110876448225" valorfin="122289.88574440622" />
+    </titpublico>
+    <debenture>
+      <debenture codativo="ALEN11" qtdisponivel="2215" puposicao="1053.6498714185163" valorfin="2333834.465192014" />
+      <debenture codativo="BSAN12" qtdisponivel="4768" puposicao="1089.2551668134918" valorfin="5193568.6353667285" />
+      <debenture codativo="EVAR15" qtdisponivel="1056" puposicao="1058.0272426261445" valorfin="1117276.7682132085" />
+      <debenture codativo="GROD13" qtdisponivel="9937" puposicao="1055.8916044414984" valorfin="10492394.87333517" />
+    </debenture>
+    <futuros>
+      <futuro codativo="DI1F26" qtdisponivel="40" puposicao="75617.02072427176" valorfin="3024680.8289708705" />
+      <futuro codativo="DI1F27" qtdisponivel="22" puposicao="67471.84194844488" valorfin="1484380.5228657874" />
+      <futuro codativo="DI1F28" qtdisponivel="847" puposicao="60120.93949940883" valorfin="50922435.755999275" />
+    </futuros>
+    <provisao>
+      <item tipo="ADM" valor="76760.69889405849" />
+      <item tipo="PERFORMANCE" valor="0.0" />
+      <item tipo="RESGATES_A_PAGAR" valor="0.0" />
+    </provisao>
+    <eventos />
+  </fundo>
+</arquivoposicao_4_01>

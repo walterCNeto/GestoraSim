@@ -12,7 +12,8 @@ from gestorasim.conciliacao.workflow import TransicaoInvalida, WorkflowQuebras
 def render() -> None:
     dados.exigir("quebras_conciliacao", "cota_paralela", "fundos")
     q = dados.tabela("quebras_conciliacao")
-    wf = WorkflowQuebras(dados.pasta())
+    wf = WorkflowQuebras(dados.pasta_gravavel())
+    dados.aviso_escrita()
     nomes = dados.fundos()
     st.caption("O arquivo diário do administrador é um XML sintético (`adm_xml/`) com divergências injetadas; cada quebra "
                "traz um diagnóstico automático provável. Status do workflow: ABERTA → JUSTIFICADA → RESOLVIDA.")

@@ -1,0 +1,34 @@
+<?xml version='1.0' encoding='utf-8'?>
+<arquivoposicao_4_01>
+  <fundo>
+    <header cnpj="99.000.003/0001-92" nome="Sim Crédito Privado RF" dtposicao="20230428" cnpjadm="99.999.999/0001-99" nomeadm="Administradora Sim S.A." valorcota="1.0485983858" quantidade="109798667.31495273" patliq="115134705.31086689" />
+    <caixa saldo_disponivel="24874587.78671353" saldo_projetado="24809504.207918957" />
+    <acoes />
+    <titpublico>
+      <titpublico codativo="LTN260102" qtdisponivel="7165" puposicao="747.7775228915749" valorfin="5357825.951518134" />
+      <titpublico codativo="LTN270104" qtdisponivel="1010" puposicao="668.6393762925187" valorfin="675325.7700554439" />
+      <titpublico codativo="LTN290102" qtdisponivel="950" puposicao="533.5634584877209" valorfin="506885.2855633349" />
+      <titpublico codativo="NTNB260817" qtdisponivel="19271" puposicao="994.2385251915813" valorfin="19159970.618966963" />
+      <titpublico codativo="NTNB280815" qtdisponivel="1" puposicao="973.185894803964" valorfin="973.185894803964" />
+      <titpublico codativo="NTNB300815" qtdisponivel="1618" puposicao="955.2625543467063" valorfin="1545614.812932971" />
+      <titpublico codativo="NTNB350515" qtdisponivel="610" puposicao="936.2295818769952" valorfin="571100.044944967" />
+    </titpublico>
+    <debenture>
+      <debenture codativo="ALEN11" qtdisponivel="18546" puposicao="1036.9468612859123" valorfin="19231216.48940853" />
+      <debenture codativo="BSAN12" qtdisponivel="15564" puposicao="1080.0058549873863" valorfin="16809211.127023682" />
+      <debenture codativo="DLOG14" qtdisponivel="10236" puposicao="1068.2671998366077" valorfin="10934783.057527516" />
+      <debenture codativo="EVAR15" qtdisponivel="4578" puposicao="1042.510493840614" valorfin="4772613.040802331" />
+      <debenture codativo="GROD13" qtdisponivel="10816" puposicao="1038.4937314041865" valorfin="11232348.19886768" />
+    </debenture>
+    <futuros>
+      <futuro codativo="DI1F26" qtdisponivel="10" puposicao="74777.75228915749" valorfin="747777.5228915749" />
+      <futuro codativo="DI1F28" qtdisponivel="347" puposicao="59714.5602474457" valorfin="20720952.405863658" />
+    </futuros>
+    <provisao>
+      <item tipo="ADM" valor="63926.3358273426" />
+      <item tipo="PERFORMANCE" valor="408740.14473108837" />
+      <item tipo="RESGATES_A_PAGAR" valor="0.0" />
+    </provisao>
+    <eventos />
+  </fundo>
+</arquivoposicao_4_01>

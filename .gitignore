@@ -1,4 +1,5 @@
 .venv/
 data/sim/
+data/demo/orquestrador/
 __pycache__/
 *.egg-info/

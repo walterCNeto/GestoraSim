@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='utf-8'?>
+<arquivoposicao_4_01>
+  <fundo>
+    <header cnpj="99.000.003/0001-92" nome="Sim Crédito Privado RF" dtposicao="20230112" cnpjadm="99.999.999/0001-99" nomeadm="Administradora Sim S.A." valorcota="1.0060602184" quantidade="100772546.98274587" patliq="101383250.62327227" />
+    <caixa saldo_disponivel="22033278.58665218" saldo_projetado="22046086.499276552" />
+    <acoes />
+    <titpublico>
+      <titpublico codativo="LTN260102" qtdisponivel="13583" puposicao="712.3741002125369" valorfin="9676177.403186888" />
+      <titpublico codativo="NTNB260817" qtdisponivel="12776" puposicao="971.9716746809634" valorfin="12417910.115723988" />
+    </titpublico>
+    <debenture>
+      <debenture codativo="ALEN11" qtdisponivel="18574" puposicao="1004.8857903791778" valorfin="18664748.67050285" />
+      <debenture codativo="BSAN12" qtdisponivel="14778" puposicao="1014.7824871396788" valorfin="14996455.594950173" />
+      <debenture codativo="DLOG14" qtdisponivel="5780" puposicao="1008.5405161107225" valorfin="5829364.183119976" />
+      <debenture codativo="EVAR15" qtdisponivel="6275" puposicao="1002.1180081402784" valorfin="6288290.501080248" />
+      <debenture codativo="GROD13" qtdisponivel="11523" puposicao="1002.793704025516" valorfin="11555191.851486022" />
+    </debenture>
+    <futuros>
+      <futuro codativo="DI1F28" qtdisponivel="279" puposicao="56470.85476376285" valorfin="15755368.479089836" />
+    </futuros>
+    <provisao>
+      <item tipo="ADM" valor="25514.80742237452" />
+      <item tipo="PERFORMANCE" valor="65459.38863203863" />
+      <item tipo="RESGATES_A_PAGAR" valor="0.0" />
+    </provisao>
+    <eventos />
+  </fundo>
+</arquivoposicao_4_01>

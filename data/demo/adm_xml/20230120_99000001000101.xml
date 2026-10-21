@@ -1,0 +1,34 @@
+<?xml version='1.0' encoding='utf-8'?>
+<arquivoposicao_4_01>
+  <fundo>
+    <header cnpj="99.000.001/0001-01" nome="Sim Ações FIA" dtposicao="20230120" cnpjadm="99.999.999/0001-99" nomeadm="Administradora Sim S.A." valorcota="0.9901843024" quantidade="104406427.2502541" patliq="103381605.33338167" />
+    <caixa saldo_disponivel="4297703.822901752" saldo_projetado="4297703.822901752" />
+    <acoes>
+      <acao codativo="GAMA4" qtdisponivel="74200" puposicao="23.86161175196789" valorfin="1770531.5919960174" />
+      <acao codativo="IOTA3" qtdisponivel="148300" puposicao="56.42312916327356" valorfin="8367550.054913469" />
+      <acao codativo="KAPA3" qtdisponivel="125600" puposicao="64.33934386545596" valorfin="8081021.589501268" />
+      <acao codativo="MIUU4" qtdisponivel="317500" puposicao="30.51092525939573" valorfin="9687218.769858144" />
+      <acao codativo="NIUU3" qtdisponivel="103100" puposicao="67.27950188667494" valorfin="6936516.644516186" />
+      <acao codativo="OMIC3" qtdisponivel="110300" puposicao="73.09373044322822" valorfin="8062238.467888073" />
+      <acao codativo="SIGM3" qtdisponivel="579200" puposicao="14.346030238437649" valorfin="8309220.714103086" />
+      <acao codativo="TETA3" qtdisponivel="283500" puposicao="36.356583917200886" valorfin="10307091.540526452" />
+      <acao codativo="UPSI4" qtdisponivel="89300" puposicao="83.71191669071219" valorfin="7475474.160480598" />
+      <acao codativo="XIII3" qtdisponivel="128700" puposicao="73.76636495826938" valorfin="9493731.17012927" />
+      <acao codativo="ZETA3" qtdisponivel="329600" puposicao="29.537728613397938" valorfin="9735635.35097596" />
+    </acoes>
+    <titpublico>
+      <titpublico codativo="LTN270104" qtdisponivel="15478" puposicao="635.705283731666" valorfin="9839446.381598726" />
+      <titpublico codativo="NTNB260817" qtdisponivel="1285" puposicao="976.9806849489239" valorfin="1255420.1801593672" />
+    </titpublico>
+    <debenture />
+    <futuros />
+    <provisao>
+      <item tipo="ADM" valor="108472.74228879671" />
+      <item tipo="PERFORMANCE" valor="83379.8882744337" />
+      <item tipo="RESGATES_A_PAGAR" valor="45342.47560348208" />
+    </provisao>
+    <eventos>
+      <evento tipo="DIVIDENDO" codativo="KAPA3" valor="190531.20134729773" />
+    </eventos>
+  </fundo>
+</arquivoposicao_4_01>

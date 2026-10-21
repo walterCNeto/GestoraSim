@@ -15,7 +15,8 @@ def render() -> None:
     dados.exigir("cota_diaria", "fundos")
     cota = dados.tabela("cota_diaria")
     ultima = cota["data"].max()
-    st.caption(f"Dados simulados · pasta `{dados.pasta()}` · último pregão {ultima:%Y-%m-%d}")
+    st.caption(f"Dados simulados · pasta `{dados.pasta()}`{' (dataset demo reduzido)' if dados.modo_demo() else ''}"
+               f" · último pregão {ultima:%Y-%m-%d}")
 
     cols = st.columns(len(dados.fundos()))
     for col, (cnpj, nome) in zip(cols, dados.fundos().items()):
@@ -55,7 +56,7 @@ def render() -> None:
         if q.empty:
             st.info("Sem quebras.")
         else:
-            q = WorkflowQuebras(dados.pasta()).quebras_com_status(q)
+            q = WorkflowQuebras(dados.pasta_gravavel()).quebras_com_status(q)
             abertas = q[q["status_workflow"] != "RESOLVIDA"]
             st.metric("Abertas ou justificadas", len(abertas), delta=f"{len(q) - len(abertas)} resolvidas")
             st.dataframe(abertas.groupby(["tipo", "status_workflow"]).size().unstack(fill_value=0))

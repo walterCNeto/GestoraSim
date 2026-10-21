@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 import pandas as pd
@@ -11,11 +12,55 @@ import streamlit as st
 
 from gestorasim.dados.universo import DESTINO_PADRAO
 
-AJUDA = "Rode `python -m gestorasim.orquestrador --de 2023-01-02 --ate 2024-12-30` para gerar os dados."
+AJUDA = ("Rode `python -m gestorasim.orquestrador --de 2023-01-02 --ate 2024-12-30` para gerar os dados "
+         "(ou use o dataset demo em data/demo).")
+
+
+DEMO = DESTINO_PADRAO.parent / "demo"
+_SENTINELA = "cota_diaria.parquet"
 
 
 def pasta() -> Path:
-    return Path(os.environ.get("GESTORASIM_DADOS", DESTINO_PADRAO))
+    """GESTORASIM_DADOS (se definida e não vazia); senão data/sim, se tiver o ciclo gravado; senão data/demo."""
+    env = os.environ.get("GESTORASIM_DADOS", "").strip()
+    if env:
+        return Path(env)
+    return DESTINO_PADRAO if (DESTINO_PADRAO / _SENTINELA).exists() else DEMO
+
+
+def modo_demo() -> bool:
+    return pasta().resolve() == DEMO.resolve()
+
+
+def _gravavel(destino: Path) -> bool:
+    try:
+        with tempfile.NamedTemporaryFile(dir=destino):
+            return True
+    except OSError:
+        return False
+
+
+def pasta_gravavel() -> Path:
+    """Onde o app grava ordens manuais e workflow: a pasta de dados, se for gravável (e GESTORASIM_ESCRITA não
+    mandar outra); senão uma pasta temporária (no Streamlit Cloud o disco é efêmero e somente leitura)."""
+    env = os.environ.get("GESTORASIM_ESCRITA", "").strip()
+    if env:
+        alvo = Path(env)
+        alvo.mkdir(parents=True, exist_ok=True)
+        return alvo
+    destino = pasta()
+    if _gravavel(destino):
+        return destino
+    tmp = Path(tempfile.gettempdir()) / "gestorasim_app"
+    tmp.mkdir(parents=True, exist_ok=True)
+    return tmp
+
+
+def aviso_escrita() -> None:
+    """Aviso discreto quando as gravações do app vão para uma pasta temporária."""
+    if pasta_gravavel().resolve() != pasta().resolve():
+        st.caption("ℹ️ Pasta de dados somente leitura: ordens manuais e workflow ficam em disco temporário "
+                   "e se perdem quando a sessão do servidor reinicia.")
 
 
 @st.cache_data(show_spinner=False)
@@ -35,6 +80,12 @@ def tabela(nome: str) -> pd.DataFrame:
 
 def tabela_ou_vazia(nome: str) -> pd.DataFrame:
     return tabela(nome) if existe(nome) else pd.DataFrame()
+
+
+def tabela_gravavel(nome: str) -> pd.DataFrame:
+    """Tabela escrita pelo app (manuais, workflow), lida da pasta gravável; vazia se ainda não existe."""
+    arq = pasta_gravavel() / f"{nome}.parquet"
+    return pd.read_parquet(arq) if arq.exists() else pd.DataFrame()
 
 
 def meta_ciclo() -> dict:

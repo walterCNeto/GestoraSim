@@ -1,0 +1,31 @@
+<?xml version='1.0' encoding='utf-8'?>
+<arquivoposicao_4_01>
+  <fundo>
+    <header cnpj="99.000.001/0001-01" nome="Sim Ações FIA" dtposicao="20230113" cnpjadm="99.999.999/0001-99" nomeadm="Administradora Sim S.A." valorcota="0.9679979927" quantidade="101047533.99500388" patliq="97813810.06963791" />
+    <caixa saldo_disponivel="5792413.906341309" saldo_projetado="5792413.906341309" />
+    <acoes>
+      <acao codativo="IOTA3" qtdisponivel="150000" puposicao="58.10072417803848" valorfin="8715108.626705773" />
+      <acao codativo="KAPA3" qtdisponivel="111900" puposicao="59.359538157547114" valorfin="6642332.319829522" />
+      <acao codativo="MIUU4" qtdisponivel="288400" puposicao="29.02129666488391" valorfin="8369741.95815252" />
+      <acao codativo="NIUU3" qtdisponivel="103100" puposicao="68.45026742710608" valorfin="7057222.571734637" />
+      <acao codativo="OMIC3" qtdisponivel="117900" puposicao="69.6812280544307" valorfin="8215416.78761738" />
+      <acao codativo="SIGM3" qtdisponivel="468900" puposicao="14.00940570338034" valorfin="6569010.334315041" />
+      <acao codativo="TETA3" qtdisponivel="246100" puposicao="35.505029820397525" valorfin="8737787.83879983" />
+      <acao codativo="UPSI4" qtdisponivel="84300" puposicao="79.33316237946943" valorfin="6687785.588589272" />
+      <acao codativo="XIII3" qtdisponivel="162800" puposicao="74.12443592884858" valorfin="12067458.169216549" />
+      <acao codativo="ZETA3" qtdisponivel="280500" puposicao="28.87412875369505" valorfin="8099193.115411461" />
+    </acoes>
+    <titpublico>
+      <titpublico codativo="LTN270104" qtdisponivel="15883" puposicao="635.5599707499069" valorfin="10094599.015420772" />
+      <titpublico codativo="NTNB260817" qtdisponivel="1022" puposicao="975.2437356872057" valorfin="996699.0978723242" />
+    </titpublico>
+    <debenture />
+    <futuros />
+    <provisao>
+      <item tipo="ADM" valor="69475.93244178523" />
+      <item tipo="PERFORMANCE" valor="161483.32792670082" />
+      <item tipo="RESGATES_A_PAGAR" valor="0.0" />
+    </provisao>
+    <eventos />
+  </fundo>
+</arquivoposicao_4_01>

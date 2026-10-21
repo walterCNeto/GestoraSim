@@ -14,14 +14,15 @@ from gestorasim.boletagem.manual import BoletagemManual
 
 
 @st.cache_resource(show_spinner="Carregando posições, preços e volumes…")
-def _servico(pasta: str, mtime: float) -> BoletagemManual:
-    return BoletagemManual(pasta)
+def _servico(pasta: str, escrita: str, mtime: float) -> BoletagemManual:
+    return BoletagemManual(pasta, destino_escrita=escrita)
 
 
 def render() -> None:
     dados.exigir("posicoes_diarias", "pl_diario", "cota_diaria", "mtm_painel", "ativos", "fundos", "calendario")
     mtime = (dados.pasta() / "pl_diario.parquet").stat().st_mtime
-    bm = _servico(str(dados.pasta()), mtime)
+    bm = _servico(str(dados.pasta()), str(dados.pasta_gravavel()), mtime)
+    dados.aviso_escrita()
     st.info("Ordens manuais ficam em um ledger **separado** (tag MANUAL): a série oficial não é alterada. "
             "O estado de partida é o fechamento oficial da data escolhida.")
 
@@ -77,6 +78,6 @@ def render() -> None:
                 st.dataframe(tres_casas(resultado[chave]), hide_index=True)
 
     st.subheader("Ordens manuais gravadas")
-    om = dados.tabela_ou_vazia("ordens_manuais")
+    om = dados.tabela_gravavel("ordens_manuais")
     st.dataframe(tres_casas(om.sort_values("data", ascending=False)) if len(om) else pd.DataFrame({"": ["(nenhuma)"]}),
                  hide_index=True)

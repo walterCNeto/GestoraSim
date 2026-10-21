@@ -31,7 +31,16 @@ imprime números com 3 casas decimais):
 | `python -m gestorasim.orquestrador.diagnostico [--ablacao]` | decomposição do retorno do Multimercado |
 | `python -m gestorasim.orquestrador.perfil [--completa]` | perfil de desempenho (10 funções mais caras) |
 
-O app procura os dados em `data/sim`; use `GESTORASIM_DADOS=<pasta>` para apontar para outra.
+O app lê, nesta ordem: `GESTORASIM_DADOS` (se definida e não vazia), `data/sim` (se o ciclo estiver gravado) e, por fim,
+`data/demo` — um dataset reduzido (2023-01-02 a 2023-06-30, seed 42, ~4 MB) versionado no git, gerado com
+`python -m gestorasim.orquestrador --de 2023-01-02 --ate 2023-06-30 --destino data/demo`.
+
+### Deploy no Streamlit Community Cloud
+
+Arquivo principal `app/Home.py`; `requirements.txt` (`.[app]`) instala o pacote e o Streamlit; o tema e `headless`
+ficam em `.streamlit/config.toml`. Sem `data/sim` no repositório, o app usa `data/demo`. Como o disco do Cloud é efêmero
+e pode ser somente leitura, a boletagem manual e o workflow de conciliação gravam em pasta temporária quando a pasta de
+dados não é gravável (aviso discreto na tela; `GESTORASIM_ESCRITA=<pasta>` força outro destino).
 
 ## Fluxo do ciclo diário (D0)
 

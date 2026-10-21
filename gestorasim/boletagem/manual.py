@@ -27,8 +27,11 @@ USUARIO_PADRAO = "gestor.manual"
 
 
 class BoletagemManual:
-    def __init__(self, destino: Path | str, seed: int = 42) -> None:
+    def __init__(self, destino: Path | str, seed: int = 42, destino_escrita: Path | str | None = None) -> None:
+        """`destino`: dados oficiais (somente leitura); `destino_escrita`: onde ficam as tabelas manuais (default: `destino`)."""
         self.destino = Path(destino)
+        self.escrita = Path(destino_escrita) if destino_escrita is not None else self.destino
+        self.escrita.mkdir(parents=True, exist_ok=True)
         ler = lambda n: pd.read_parquet(self.destino / f"{n}.parquet")  # noqa: E731
         self.meta = ler("ativos").set_index("ticker")
         self.fundos = carregar_fundos(self.destino)
@@ -50,7 +53,7 @@ class BoletagemManual:
         return 100 if classe_de(self.meta, ticker) == "ACAO" else 1
 
     def _manual(self, nome: str) -> pd.DataFrame:
-        arq = self.destino / f"{nome}.parquet"
+        arq = self.escrita / f"{nome}.parquet"
         return pd.read_parquet(arq) if arq.exists() else pd.DataFrame()
 
     # ------------------------------------------------------------------ estado de partida
@@ -130,6 +133,6 @@ class BoletagemManual:
         for nome, df in novos.items():
             if len(df):
                 antigo = self._manual(nome)
-                pd.concat([antigo, df], ignore_index=True).to_parquet(self.destino / f"{nome}.parquet", index=False)
+                pd.concat([antigo, df], ignore_index=True).to_parquet(self.escrita / f"{nome}.parquet", index=False)
         out["liberada"] = ordem.estado in (EstadoOrdem.ALOCADA,)
         return out

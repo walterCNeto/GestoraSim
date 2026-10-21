@@ -220,3 +220,111 @@ def test_conciliacao_da_interface_segue_o_workflow(dados_copia, monkeypatch):
     next(b for b in at.button if b.label == "Justificar").click().run()
     h = pd.read_parquet(dados_copia / "workflow_quebras.parquet")
     assert h["status"].tolist() == ["JUSTIFICADA"] and h["usuario"].iloc[0] == "ana"
+
+
+# ======================================================================= deploy: dataset demo e pasta gravável
+
+DEMO = RAIZ / "data" / "demo"
+
+
+def test_dataset_demo_versionado_e_pequeno():
+    assert (DEMO / "cota_diaria.parquet").exists() and (DEMO / "ciclo_meta.json").exists()
+    mb = sum(f.stat().st_size for f in DEMO.rglob("*") if f.is_file()) / 1e6
+    assert mb < 50, f"demo com {mb:.1f} MB"
+    cota = pd.read_parquet(DEMO / "cota_diaria.parquet")
+    assert cota["data"].min() == pd.Timestamp("2023-01-02") and cota["data"].max() <= pd.Timestamp("2023-06-30")
+    for nome in ("mtm_painel", "pl_diario", "risco_diario", "quebras_conciliacao", "execucoes_ciclo", "ativos", "fundos"):
+        assert (DEMO / f"{nome}.parquet").exists(), nome
+    assert not (DEMO / "orquestrador").exists()  # checkpoints não são versionados
+    ignorados = (RAIZ / ".gitignore").read_text()
+    assert "data/sim/" in ignorados and "data/demo/\n" not in ignorados
+
+
+def test_arquivos_de_deploy():
+    assert (RAIZ / "requirements.txt").read_text().strip() == ".[app]"
+    cfg = (RAIZ / ".streamlit" / "config.toml").read_text()
+    assert "[server]" in cfg and "headless = true" in cfg and "[theme]" in cfg
+
+
+def test_resolucao_da_pasta_de_dados(tmp_path, monkeypatch):
+    from app import dados
+
+    sim, demo = tmp_path / "sim", tmp_path / "demo"
+    monkeypatch.setattr(dados, "DESTINO_PADRAO", sim)
+    monkeypatch.setattr(dados, "DEMO", demo)
+    monkeypatch.delenv("GESTORASIM_DADOS", raising=False)
+    assert dados.pasta() == demo and dados.modo_demo()  # sem variável e sem data/sim: demo
+    sim.mkdir()
+    assert dados.pasta() == demo  # data/sim existe mas está vazia: ainda demo
+    (sim / "cota_diaria.parquet").write_bytes(b"x")
+    assert dados.pasta() == sim and not dados.modo_demo()  # com o ciclo gravado: data/sim
+    monkeypatch.setenv("GESTORASIM_DADOS", "")
+    assert dados.pasta() == sim  # variável vazia = não definida (set GESTORASIM_DADOS=)
+    monkeypatch.setenv("GESTORASIM_DADOS", str(tmp_path / "outra"))
+    assert dados.pasta() == tmp_path / "outra"
+
+
+def test_paginas_rodam_com_o_dataset_demo(monkeypatch, tmp_path):
+    """`set GESTORASIM_DADOS=` (vazia) e data/sim ausente: o app lê data/demo; 9 páginas sem erro."""
+    from streamlit.testing.v1 import AppTest
+
+    from app import dados
+
+    monkeypatch.setenv("GESTORASIM_DADOS", "")
+    monkeypatch.setattr(dados, "DESTINO_PADRAO", tmp_path / "sem_sim")
+    monkeypatch.setattr(dados, "DEMO", DEMO)
+    scripts = [RAIZ / "app" / "Home.py", *sorted((RAIZ / "app" / "pages").glob("*.py"))]
+    assert len(scripts) == 9
+    for s in scripts:
+        at = AppTest.from_file(str(s), default_timeout=120).run()
+        assert not at.exception, f"{s.name}: {[str(e.value)[:300] for e in at.exception]}"
+        assert not at.error, f"{s.name}: {[e.value[:200] for e in at.error]}"
+    home = AppTest.from_file(str(RAIZ / "app" / "Home.py"), default_timeout=120).run()
+    assert any("dataset demo" in c.value for c in home.caption)
+
+
+def test_manual_e_workflow_gravam_em_pasta_temporaria_se_o_disco_e_somente_leitura(dados_copia, tmp_path, monkeypatch):
+    import tempfile
+
+    from streamlit.testing.v1 import AppTest
+
+    from app import dados
+
+    temporaria = tmp_path / "tmp"
+    temporaria.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temporaria))
+    monkeypatch.setattr(dados, "_gravavel", lambda destino: False)  # como no Streamlit Cloud
+    monkeypatch.setenv("GESTORASIM_DADOS", str(dados_copia))
+    monkeypatch.delenv("GESTORASIM_ESCRITA", raising=False)
+    assert dados.pasta_gravavel() == temporaria / "gestorasim_app"
+    antes = hash_oficial(dados_copia)
+
+    at = AppTest.from_file(str(RAIZ / "app" / "pages" / "1_Boletagem.py"), default_timeout=120).run()
+    assert not at.exception and any("somente leitura" in c.value for c in at.caption)  # aviso discreto
+    at.number_input(key=at.number_input[1].key).set_value(500).run()
+    next(b for b in at.button if b.label == "Enviar ordem").click().run()
+    assert not at.exception
+    tmp_app = temporaria / "gestorasim_app"
+    assert (tmp_app / "ordens_manuais.parquet").exists() and (tmp_app / "ledger_manual.parquet").exists()
+    assert not any((dados_copia / f"{n}.parquet").exists() for n in TABELAS_MANUAIS)  # nada na pasta de dados
+
+    at = AppTest.from_file(str(RAIZ / "app" / "pages" / "6_Conciliacao.py"), default_timeout=120).run()
+    assert not at.exception and any("somente leitura" in c.value for c in at.caption)
+    at.text_input(key="conc_usuario").set_value("ana")
+    at.text_area(key="conc_comentario").set_value("cota digitada errada pelo administrador")
+    next(b for b in at.button if b.label == "Justificar").click().run()
+    assert (tmp_app / "workflow_quebras.parquet").exists() and not (dados_copia / "workflow_quebras.parquet").exists()
+    assert hash_oficial(dados_copia) == antes
+
+
+def test_servico_manual_separa_leitura_e_escrita(dados_copia, tmp_path):
+    antes = hash_oficial(dados_copia)
+    bm = BoletagemManual(dados_copia, destino_escrita=tmp_path / "escrita")
+    mm = next(f.cnpj for f in bm.fundos if f.classe.value == "MULTIMERCADO")
+    assert bm.enviar(bm.datas[10], "LTN270104", "C", {mm: 100}, "a")["estado"] == "ALOCADA"
+    assert (tmp_path / "escrita" / "ordens_manuais.parquet").exists()
+    assert not any((dados_copia / f"{n}.parquet").exists() for n in TABELAS_MANUAIS) and hash_oficial(dados_copia) == antes
+    # uma 2ª instância apontando para a mesma escrita enxerga a ordem anterior (MAN0002)
+    bm2 = BoletagemManual(dados_copia, destino_escrita=tmp_path / "escrita")
+    bm2.enviar(bm2.datas[10], "LTN270104", "C", {mm: 100}, "a")
+    assert pd.read_parquet(tmp_path / "escrita" / "ordens_manuais.parquet")["ordem_id"].tolist() == ["MAN0001", "MAN0002"]
