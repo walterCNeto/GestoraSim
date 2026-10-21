@@ -17,7 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
-app = ["streamlit>=1.40"]
+app = ["streamlit>=1.40", "plotly>=5.20"]
 
 [tool.setuptools.packages.find]
 include = ["gestorasim*"]

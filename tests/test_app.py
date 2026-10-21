@@ -14,7 +14,7 @@ from gestorasim.conciliacao.workflow import TransicaoInvalida, WorkflowQuebras
 from gestorasim.relatorios.lamina import gerar_lamina, periodos
 
 RAIZ = Path(__file__).resolve().parents[1]
-PAGINAS = ["visao_geral", "boletagem", "carteira", "risco", "enquadramento", "passivo_cota", "conciliacao", "trilha",
+PAGINAS = ["comece_aqui", "visao_geral", "boletagem", "carteira", "risco", "enquadramento", "passivo_cota", "conciliacao", "trilha",
            "lamina"]
 
 
@@ -169,25 +169,25 @@ def test_paginas_importam_e_tem_render(modulo):
 
 
 def test_scripts_do_app_rodam_sem_erro(ciclo_curto, monkeypatch):
-    """Executa Home e as 8 páginas com o AppTest do Streamlit sobre os parquets de um ciclo curto."""
+    """Executa 'Comece aqui' e as 9 páginas com o AppTest do Streamlit sobre os parquets de um ciclo curto."""
     from streamlit.testing.v1 import AppTest
 
     _, _, destino = ciclo_curto
     monkeypatch.setenv("GESTORASIM_DADOS", str(destino))
-    scripts = [RAIZ / "app" / "Home.py", *sorted((RAIZ / "app" / "pages").glob("*.py"))]
-    assert len(scripts) == 9
+    scripts = [RAIZ / "app" / "Comece_aqui.py", *sorted((RAIZ / "app" / "pages").glob("*.py"))]
+    assert len(scripts) == 10
     for s in scripts:
         at = AppTest.from_file(str(s), default_timeout=120).run()
         assert not at.exception, f"{s.name}: {[str(e.value)[:300] for e in at.exception]}"
         assert not at.error, f"{s.name}: {[e.value[:200] for e in at.error]}"
-        assert len(at.title) == 1
+        assert len(at.title) == 1 and len(at.sidebar.selectbox) == 2  # filtros globais
 
 
 def test_app_sem_dados_orienta_o_usuario(tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("GESTORASIM_DADOS", str(tmp_path))
-    at = AppTest.from_file(str(RAIZ / "app" / "Home.py"), default_timeout=60).run()
+    at = AppTest.from_file(str(RAIZ / "app" / "Comece_aqui.py"), default_timeout=60).run()
     assert not at.exception and any("orquestrador" in w.value for w in at.warning)
 
 
@@ -195,7 +195,7 @@ def test_boletagem_da_interface_pre_trade_e_envio(dados_copia, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("GESTORASIM_DADOS", str(dados_copia))
-    at = AppTest.from_file(str(RAIZ / "app" / "pages" / "1_Boletagem.py"), default_timeout=120).run()
+    at = AppTest.from_file(str(RAIZ / "app" / "pages" / "3_Boletagem.py"), default_timeout=120).run()
     assert not at.exception
     at.number_input(key=at.number_input[1].key).set_value(500).run()  # 2º fundo (Multimercado)
     assert not at.exception and len(at.dataframe) >= 1  # pré-trade ao vivo na tela
@@ -209,7 +209,7 @@ def test_conciliacao_da_interface_segue_o_workflow(dados_copia, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setenv("GESTORASIM_DADOS", str(dados_copia))
-    at = AppTest.from_file(str(RAIZ / "app" / "pages" / "6_Conciliacao.py"), default_timeout=120).run()
+    at = AppTest.from_file(str(RAIZ / "app" / "pages" / "7_Conciliação.py"), default_timeout=120).run()
     assert not at.exception
     at.text_input(key="conc_usuario").set_value("ana")
     at.text_area(key="conc_comentario").set_value("resolvido sem justificar")
@@ -232,7 +232,7 @@ def test_dataset_demo_versionado_e_pequeno():
     mb = sum(f.stat().st_size for f in DEMO.rglob("*") if f.is_file()) / 1e6
     assert mb < 50, f"demo com {mb:.1f} MB"
     cota = pd.read_parquet(DEMO / "cota_diaria.parquet")
-    assert cota["data"].min() == pd.Timestamp("2023-01-02") and cota["data"].max() <= pd.Timestamp("2023-06-30")
+    assert cota["data"].min() == pd.Timestamp("2023-01-02") and cota["data"].max() >= pd.Timestamp("2023-08-01")  # inclui episódio passivo (21/07)
     for nome in ("mtm_painel", "pl_diario", "risco_diario", "quebras_conciliacao", "execucoes_ciclo", "ativos", "fundos"):
         assert (DEMO / f"{nome}.parquet").exists(), nome
     assert not (DEMO / "orquestrador").exists()  # checkpoints não são versionados
@@ -265,7 +265,7 @@ def test_resolucao_da_pasta_de_dados(tmp_path, monkeypatch):
 
 
 def test_paginas_rodam_com_o_dataset_demo(monkeypatch, tmp_path):
-    """`set GESTORASIM_DADOS=` (vazia) e data/sim ausente: o app lê data/demo; 9 páginas sem erro."""
+    """`set GESTORASIM_DADOS=` (vazia) e data/sim ausente: o app lê data/demo; 10 páginas sem erro."""
     from streamlit.testing.v1 import AppTest
 
     from app import dados
@@ -273,14 +273,14 @@ def test_paginas_rodam_com_o_dataset_demo(monkeypatch, tmp_path):
     monkeypatch.setenv("GESTORASIM_DADOS", "")
     monkeypatch.setattr(dados, "DESTINO_PADRAO", tmp_path / "sem_sim")
     monkeypatch.setattr(dados, "DEMO", DEMO)
-    scripts = [RAIZ / "app" / "Home.py", *sorted((RAIZ / "app" / "pages").glob("*.py"))]
-    assert len(scripts) == 9
+    scripts = [RAIZ / "app" / "Comece_aqui.py", *sorted((RAIZ / "app" / "pages").glob("*.py"))]
+    assert len(scripts) == 10
     for s in scripts:
         at = AppTest.from_file(str(s), default_timeout=120).run()
         assert not at.exception, f"{s.name}: {[str(e.value)[:300] for e in at.exception]}"
         assert not at.error, f"{s.name}: {[e.value[:200] for e in at.error]}"
-    home = AppTest.from_file(str(RAIZ / "app" / "Home.py"), default_timeout=120).run()
-    assert any("dataset demo" in c.value for c in home.caption)
+    home = AppTest.from_file(str(RAIZ / "app" / "Comece_aqui.py"), default_timeout=120).run()
+    assert any("demo reduzido" in c.value for c in home.caption)
 
 
 def test_manual_e_workflow_gravam_em_pasta_temporaria_se_o_disco_e_somente_leitura(dados_copia, tmp_path, monkeypatch):
@@ -299,7 +299,7 @@ def test_manual_e_workflow_gravam_em_pasta_temporaria_se_o_disco_e_somente_leitu
     assert dados.pasta_gravavel() == temporaria / "gestorasim_app"
     antes = hash_oficial(dados_copia)
 
-    at = AppTest.from_file(str(RAIZ / "app" / "pages" / "1_Boletagem.py"), default_timeout=120).run()
+    at = AppTest.from_file(str(RAIZ / "app" / "pages" / "3_Boletagem.py"), default_timeout=120).run()
     assert not at.exception and any("somente leitura" in c.value for c in at.caption)  # aviso discreto
     at.number_input(key=at.number_input[1].key).set_value(500).run()
     next(b for b in at.button if b.label == "Enviar ordem").click().run()
@@ -308,7 +308,7 @@ def test_manual_e_workflow_gravam_em_pasta_temporaria_se_o_disco_e_somente_leitu
     assert (tmp_app / "ordens_manuais.parquet").exists() and (tmp_app / "ledger_manual.parquet").exists()
     assert not any((dados_copia / f"{n}.parquet").exists() for n in TABELAS_MANUAIS)  # nada na pasta de dados
 
-    at = AppTest.from_file(str(RAIZ / "app" / "pages" / "6_Conciliacao.py"), default_timeout=120).run()
+    at = AppTest.from_file(str(RAIZ / "app" / "pages" / "7_Conciliação.py"), default_timeout=120).run()
     assert not at.exception and any("somente leitura" in c.value for c in at.caption)
     at.text_input(key="conc_usuario").set_value("ana")
     at.text_area(key="conc_comentario").set_value("cota digitada errada pelo administrador")
@@ -328,3 +328,97 @@ def test_servico_manual_separa_leitura_e_escrita(dados_copia, tmp_path):
     bm2 = BoletagemManual(dados_copia, destino_escrita=tmp_path / "escrita")
     bm2.enviar(bm2.datas[10], "LTN270104", "C", {mm: 100}, "a")
     assert pd.read_parquet(tmp_path / "escrita" / "ordens_manuais.parquet")["ordem_id"].tolist() == ["MAN0001", "MAN0002"]
+
+
+# ======================================================================= revisão de UX e formatação pt-BR
+
+def test_roteiro_comece_aqui_acha_os_fenomenos_no_demo(monkeypatch, tmp_path):
+    from app import dados
+    from app.paginas import comece_aqui
+
+    monkeypatch.setenv("GESTORASIM_DADOS", str(DEMO))
+    f = comece_aqui.fenomenos()
+    assert {"ordem", "passivo", "ativo", "quebra", "come_cotas", "lamina"} <= set(f)
+    assert f["ordem"]["data"] == pd.Timestamp("2023-01-09") and f["passivo"]["data"] == pd.Timestamp("2023-07-21")
+    assert f["come_cotas"]["data"] == pd.Timestamp("2023-05-31")
+    assert dados.pasta() == DEMO
+
+
+def test_filtros_globais_persistem_entre_paginas(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("GESTORASIM_DADOS", str(DEMO))
+    at = AppTest.from_file(str(RAIZ / "app" / "Comece_aqui.py"), default_timeout=120).run()
+    assert at.session_state["gs_data"] == pd.Timestamp("2023-08-31")  # padrão: último pregão
+    next(b for b in at.button if b.key == "ir_5").click().run()  # quebra de caixa: 16/03/2023
+    assert not at.exception and at.session_state["gs_data"] == pd.Timestamp("2023-03-16")
+    at.switch_page("pages/7_Conciliação.py").run()
+    assert not at.exception and at.session_state["gs_data"] == pd.Timestamp("2023-03-16")
+    assert at.sidebar.selectbox(key="gs_data").value == pd.Timestamp("2023-03-16")
+
+
+def test_boletagem_override_exige_justificativa_visivel(monkeypatch, tmp_path):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setenv("GESTORASIM_DADOS", str(DEMO))
+    monkeypatch.setenv("GESTORASIM_ESCRITA", str(tmp_path))
+    at = AppTest.from_file(str(RAIZ / "app" / "pages" / "3_Boletagem.py"), default_timeout=120)
+    at.session_state["gs_data"] = pd.Timestamp("2023-01-09")
+    at.run()
+    at.selectbox(key="bol_ticker").set_value("DLOG14").run()
+    at.number_input(key=at.number_input[0].key).set_value(4888).run()  # FIA: debênture não permitida
+    assert any("violação" in e.value for e in at.error)
+    assert any("justificativa" in w.value for w in at.warning)
+    assert next(b for b in at.button if b.label == "Enviar com override").disabled
+    at.text_area(key="bol_just").set_value("liberado pelo comitê de risco").run()
+    assert not next(b for b in at.button if b.label == "Enviar com override").disabled
+
+
+def test_lamina_html_em_ptbr():
+    from app.lamina_html import gerar_lamina_html
+
+    cota, mtm, ativos = (pd.read_parquet(DEMO / f"{n}.parquet") for n in ("cota_diaria", "mtm_diario", "ativos"))
+    cnpj = cota["fundo_cnpj"].iloc[0]
+    html = gerar_lamina_html({"cota_diaria": cota, "mtm_diario": mtm, "ativos": ativos}, cnpj, "2023-06-30", "FIA")
+    assert "30/06/2023" in html and "R$ " in html and "mi" in html and "10 maiores posições" in html
+    assert "%" in html and "12 meses" in html
+
+
+# ----------------------------------------------------------------------------------- formatadores
+
+def test_formatadores_ptbr():
+    from app import formatacao as F
+
+    assert F.brl_mi(12_345_678) == "R$ 12,346 mi"
+    assert F.brl_mi(1_234_567_890) == "R$ 1.234,568 mi"  # milhar com ponto
+    assert F.brl_mi(345_678.4) == "R$ 345,678 mil"
+    assert F.brl_mi(999_999.9996) == "R$ 1,000 mi"  # arredondamento vira milhão
+    assert F.brl_mi(-12_345_678) == "-R$ 12,346 mi" and F.brl_mi(-345_678) == "-R$ 345,678 mil"
+    assert F.brl_mi(0) == "R$ 0,000 mil" and F.brl_mi(-0.0001) == "R$ 0,000 mil"
+    assert F.brl_mi(float("nan")) == "—" and F.brl_mi(None) == "—"
+    assert F.pct(0.01234) == "1,234%" and F.pct(-0.5) == "-50,000%" and F.pct(0) == "0,000%" and F.pct(float("nan")) == "—"
+    assert F.pct(0.0123456) == "1,235%" and F.pct(12.3456) == "1.234,560%"
+    assert F.bp(12.3456) == "12,346 bp" and F.bp(-0.0004) == "0,000 bp" and F.bp(float("nan")) == "—"
+    assert F.qtd(12300) == "12.300" and F.qtd(1234567) == "1.234.567" and F.qtd(-4500.4) == "-4.500" and F.qtd(0) == "0"
+    assert F.qtd(float("nan")) == "—"
+    assert F.cota(0.973108611) == "0,97310861" and F.cota(1) == "1,00000000" and F.cota(float("nan")) == "—"
+    assert F.data(pd.Timestamp("2023-01-09")) == "09/01/2023" and F.data("2023-12-31") == "31/12/2023"
+    assert F.data(pd.NaT) == "—" and F.data(None) == "—" and F.data_curta("2023-01-09") == "09/01"
+    assert F.num(1234.5678) == "1.234,568" and F.num(-0.0004) == "0,000" and F.num(2.0005, 2) == "2,00"
+    assert F.mi(2_500_000) == "2,500" and F.mil(2_500) == "2,500"
+    assert F.sinal(F.pct, 0.01) == "+1,000%" and F.sinal(F.pct, -0.01) == "-1,000%" and F.sinal(F.pct, 0) == "0,000%"
+
+
+def test_tabela_formatada_mantem_ordenacao_numerica_e_unidade_no_cabecalho():
+    from app import formatacao as F
+
+    df = pd.DataFrame({"t": ["a", "b", "c"], "v": [2_500_000.0, 10_000_000.0, float("nan")], "p": [0.5, 0.05, 0.1],
+                       "d": pd.to_datetime(["2023-01-09", "2023-02-10", None]), "s": ["OK", "SOFT", "HARD"]})
+    sty = F.tabela(df, {"t": ("Ativo", "txt"), "v": ("Valor de mercado", "mi"), "p": ("Peso", "pct"), "d": ("Data", "data"),
+                        "s": ("Status", "txt")}, badges=("s",))
+    assert list(sty.data.columns) == ["Ativo", "Valor de mercado (R$ mi)", "Peso (%)", "Data", "Status"]
+    assert sty.data["Valor de mercado (R$ mi)"].iloc[1] == 10_000_000.0  # o dado continua numérico
+    html = sty.to_html()
+    assert "2,500" in html and "10,000" in html and "50,000%" in html and "09/01/2023" in html and "—" in html
+    assert F.cor_status("HARD") == F.VERMELHO and F.cor_status("SOFT") == F.AMBAR and F.cor_status("OK") == F.VERDE
+    assert F.cor_status("ABERTA") == F.VERMELHO and F.cor_status("JUSTIFICADA") == F.AMBAR and F.cor_status("qualquer") == F.CINZA

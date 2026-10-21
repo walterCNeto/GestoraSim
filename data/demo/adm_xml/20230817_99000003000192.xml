@@ -1,0 +1,34 @@
+<?xml version='1.0' encoding='utf-8'?>
+<arquivoposicao_4_01>
+  <fundo>
+    <header cnpj="99.000.003/0001-92" nome="Sim Crédito Privado RF" dtposicao="20230817" cnpjadm="99.999.999/0001-99" nomeadm="Administradora Sim S.A." valorcota="1.0931137140" quantidade="111047226.99933627" patliq="121387246.73096082" />
+    <caixa saldo_disponivel="21007375.116077013" saldo_projetado="21011634.298468385" />
+    <acoes />
+    <titpublico>
+      <titpublico codativo="LTN260102" qtdisponivel="6118" puposicao="778.0524336945716" valorfin="4760124.789343389" />
+      <titpublico codativo="LTN270104" qtdisponivel="8825" puposicao="696.4457728327259" valorfin="6146133.945248806" />
+      <titpublico codativo="LTN290102" qtdisponivel="2293" puposicao="556.2584044028009" valorfin="1275500.5212956225" />
+      <titpublico codativo="NTNB260817" qtdisponivel="19269" puposicao="1027.1884702509424" valorfin="19792894.63326541" />
+      <titpublico codativo="NTNB280815" qtdisponivel="869" puposicao="1015.0096695663917" valorfin="882043.4028531944" />
+      <titpublico codativo="NTNB350515" qtdisponivel="479" puposicao="998.3731073920197" valorfin="478220.71844077745" />
+    </titpublico>
+    <debenture>
+      <debenture codativo="ALEN11" qtdisponivel="18283" puposicao="1012.3415343688941" valorfin="18508640.27286649" />
+      <debenture codativo="BSAN12" qtdisponivel="7236" puposicao="1129.3620489276395" valorfin="8172063.786040399" />
+      <debenture codativo="DLOG14" qtdisponivel="21622" puposicao="1107.8437582927395" valorfin="23953797.741805613" />
+      <debenture codativo="EVAR15" qtdisponivel="3103" puposicao="1013.1026563047457" valorfin="3143657.5425136257" />
+      <debenture codativo="GROD13" qtdisponivel="13367" puposicao="1015.5339136844251" valorfin="13574641.824219711" />
+    </debenture>
+    <futuros>
+      <futuro codativo="DI1F28" qtdisponivel="320" puposicao="62233.09883750023" valorfin="19914591.628000073" />
+    </futuros>
+    <provisao>
+      <item tipo="ADM" valor="49521.857099739325" />
+      <item tipo="PERFORMANCE" valor="262584.8883008526" />
+      <item tipo="RESGATES_A_PAGAR" valor="0.0" />
+    </provisao>
+    <eventos>
+      <evento tipo="CUPOM" codativo="NTNB260817" valor="587877.1933538195" />
+    </eventos>
+  </fundo>
+</arquivoposicao_4_01>

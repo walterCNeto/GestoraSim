@@ -13,7 +13,7 @@ pip install -e ".[dev,app]"                  # pacote + pytest + streamlit
 
 python -m gestorasim.orquestrador --de 2023-01-02 --ate 2024-12-30    # ciclo diário completo (~1,5 min) -> data/sim/
 python -m gestorasim.orquestrador --data 2023-06-15 --reprocessar      # recalcula 15/06/2023 e as datas seguintes
-streamlit run app/Home.py                                              # app (lê data/sim; nunca recalcula a série)
+streamlit run app/Comece_aqui.py                                              # app (lê data/sim; nunca recalcula a série)
 
 pytest                                       # ~2 min
 ```
@@ -32,12 +32,12 @@ imprime números com 3 casas decimais):
 | `python -m gestorasim.orquestrador.perfil [--completa]` | perfil de desempenho (10 funções mais caras) |
 
 O app lê, nesta ordem: `GESTORASIM_DADOS` (se definida e não vazia), `data/sim` (se o ciclo estiver gravado) e, por fim,
-`data/demo` — um dataset reduzido (2023-01-02 a 2023-06-30, seed 42, ~4 MB) versionado no git, gerado com
-`python -m gestorasim.orquestrador --de 2023-01-02 --ate 2023-06-30 --destino data/demo`.
+`data/demo` — um dataset reduzido (2023-01-02 a 2023-08-31, seed 42, ~5 MB; inclui um episódio passivo de enquadramento) versionado no git, gerado com
+`python -m gestorasim.orquestrador --de 2023-01-02 --ate 2023-08-31 --destino data/demo`.
 
 ### Deploy no Streamlit Community Cloud
 
-Arquivo principal `app/Home.py`; `requirements.txt` (`.[app]`) instala o pacote e o Streamlit; o tema e `headless`
+Arquivo principal `app/Comece_aqui.py`; `requirements.txt` (`.[app]`) instala o pacote e o Streamlit; o tema e `headless`
 ficam em `.streamlit/config.toml`. Sem `data/sim` no repositório, o app usa `data/demo`. Como o disco do Cloud é efêmero
 e pode ser somente leitura, a boletagem manual e o workflow de conciliação gravam em pasta temporária quando a pasta de
 dados não é gravável (aviso discreto na tela; `GESTORASIM_ESCRITA=<pasta>` força outro destino).
@@ -167,3 +167,16 @@ gestorasim/  dominio dados boletagem enquadramento posicao mtm risco cota concil
 app/         Home.py, pages/ (8 páginas), paginas/ (lógica de cada página), dados.py, formatacao.py
 tests/       pytest (unitários, de integração e de fumaça do app)
 ```
+
+
+## Interface do app (revisão de UX)
+
+- **Comece aqui** (primeira do menu): roteiro de 7 passos (boletagem com violação e override → trilha → risco D+1 →
+  enquadramento ativo × passivo → conciliação → passivo/come-cotas → lâmina), com botões que ajustam fundo e data para o dia
+  em que cada fenômeno ocorre no dataset carregado.
+- Barra lateral com **fundo e data** persistentes entre páginas (padrão: último pregão); cada página abre com "numa gestora
+  real", KPIs com variação e o expander "Como ler esta página" (glossário).
+- Toda a formatação numérica passa por `app/formatacao.py` (pt-BR: `R$ 12,345 mi`, `1,234%`, `12,345 bp`, `12.300`, cota com
+  8 casas, `dd/mm/aaaa`); as tabelas ordenam pelo número e trazem a unidade no cabeçalho. Cores: verde OK, âmbar SOFT, vermelho
+  HARD/violação/quebra aberta, cinza neutro.
+- Capturas das telas em `docs/screens/` (`python scripts/capturar_telas.py`; requer `pip install playwright && playwright install chromium`).

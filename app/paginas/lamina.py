@@ -1,31 +1,33 @@
-"""Lâmina mensal por fundo (HTML para download)."""
+"""Lâmina do fundo na data escolhida (HTML para download)."""
 
 from __future__ import annotations
 
-import pandas as pd
 import streamlit as st
 
 from app import dados
-from gestorasim.relatorios.lamina import gerar_lamina
+from app.lamina_html import gerar_lamina_html
+
+TITULO = "Lâmina mensal"
+REAL = ("é o material que o gestor envia a cotistas e distribuidores todo mês: rentabilidade contra o benchmark, "
+        "composição, risco e maiores posições em uma página.")
+GLOSSARIO = ("PL líquido", "VaR", "ES", "Stress")
 
 
 def render() -> None:
     dados.exigir("cota_diaria", "mtm_diario", "ativos", "fundos")
-    cota = dados.tabela("cota_diaria")
-    res = {"cota_diaria": cota, "mtm_diario": dados.tabela("mtm_diario"), "ativos": dados.tabela("ativos"),
-           "risco_diario": dados.tabela_ou_vazia("risco_diario")}
+    data, cnpj = dados.data_global(), dados.fundo_global()
+    cut = lambda t: dados.ate_data(t, "data", data) if len(t) else t  # noqa: E731
+    res = {"cota_diaria": cut(dados.tabela("cota_diaria")), "mtm_diario": cut(dados.tabela("mtm_diario")),
+           "ativos": dados.tabela("ativos"), "risco_diario": cut(dados.tabela_ou_vazia("risco_diario")),
+           "enquadramento_diario": cut(dados.tabela_ou_vazia("enquadramento_diario"))}
     classes = dict(zip(dados.tabela("fundos")["cnpj"], dados.tabela("fundos")["classe"]))
-    c1, c2 = st.columns(2)
-    with c1:
-        cnpj = dados.escolher_fundo()
-    meses = sorted(cota["data"].dt.to_period("M").astype(str).unique())
-    mes = c2.selectbox("Mês", meses, index=len(meses) - 1, key="lam_mes")
-    html = gerar_lamina(res, cnpj, mes, classes.get(cnpj, ""))
-    st.download_button("Baixar lâmina (HTML)", data=html.encode("utf-8"), file_name=f"lamina_{mes}_{cnpj[7:10]}.html",
+    html = gerar_lamina_html(res, cnpj, data, classes.get(cnpj, ""))
+    st.caption("A lâmina usa o fundo e a data da barra lateral (fechamento do mês até essa data).")
+    st.download_button("Baixar lâmina (HTML)", data=html.encode("utf-8"), file_name=f"lamina_{data:%Y-%m-%d}_{cnpj[7:10]}.html",
                        mime="text/html")
     if hasattr(st, "iframe"):  # HTML gerado por nós a partir dos dados do ciclo (texto escapado)
-        st.iframe(html, height=1100)
+        st.iframe(html, height=1250)
     else:
         import streamlit.components.v1 as components
 
-        components.html(html, height=1100, scrolling=True)
+        components.html(html, height=1250, scrolling=True)

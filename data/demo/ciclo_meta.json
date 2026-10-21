@@ -2,8 +2,8 @@
   "chave": "01d41e7a4dfe3df706cf4a35eb3c29018c51cf02",
   "config": "[('burn_in', 60), ('com_conciliacao', True), ('com_gestao_caixa', True), ('com_juros_caixa', True), ('com_ordens', True), ('com_passivo', True), ('com_politica_reenquadramento', True), ('com_pos_trade', True), ('com_reenquadramento', True), ('com_risco', True), ('histerese_reenquadramento_du', 1), ('janela_hist', 252), ('params_passivo', 'None'), ('passo_ordens', 5), ('prazo_reenquadramento_du', 10), ('seed', 42), ('spread_caixa_negativo', 0.02), ('taxa_injecao', 0.02), ('tolerancia_reinvestimento', 0.015)]",
   "de": "2023-01-02",
-  "ate": "2023-06-30",
+  "ate": "2023-08-31",
   "primeiro_pregao": "2023-01-02",
-  "ultimo_pregao": "2023-06-30",
-  "gravado_em": "2026-10-21T13:55:37"
+  "ultimo_pregao": "2023-08-31",
+  "gravado_em": "2026-10-21T15:01:24"
 }

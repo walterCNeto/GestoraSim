@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='utf-8'?>
+<arquivoposicao_4_01>
+  <fundo>
+    <header cnpj="99.000.003/0001-92" nome="Sim Crédito Privado RF" dtposicao="20230824" cnpjadm="99.999.999/0001-99" nomeadm="Administradora Sim S.A." valorcota="1.0942861559" quantidade="111058485.30459638" patliq="121529762.95874132" />
+    <caixa saldo_disponivel="23048819.33097305" saldo_projetado="23021542.009079482" />
+    <acoes />
+    <titpublico>
+      <titpublico codativo="LTN260102" qtdisponivel="5745" puposicao="779.3774478772888" valorfin="4477523.438055024" />
+      <titpublico codativo="LTN270104" qtdisponivel="11626" puposicao="697.4324905535607" valorfin="8108350.135175697" />
+      <titpublico codativo="LTN290102" qtdisponivel="2057" puposicao="556.7855622833549" valorfin="1145307.901616861" />
+      <titpublico codativo="NTNB260817" qtdisponivel="16895" puposicao="1027.6825988657658" valorfin="17362697.507837113" />
+      <titpublico codativo="NTNB280815" qtdisponivel="795" puposicao="1014.2545609970427" valorfin="806332.375992649" />
+      <titpublico codativo="NTNB350515" qtdisponivel="562" puposicao="995.0170782429065" valorfin="559199.5979725134" />
+    </titpublico>
+    <debenture>
+      <debenture codativo="ALEN11" qtdisponivel="18868" puposicao="1015.0644063566356" valorfin="19152235.219137" />
+      <debenture codativo="BSAN12" qtdisponivel="7562" puposicao="1122.6112569938775" valorfin="8489186.325387701" />
+      <debenture codativo="DLOG14" qtdisponivel="21622" puposicao="1109.7166333272712" valorfin="23994293.045802258" />
+      <debenture codativo="EVAR15" qtdisponivel="2509" puposicao="1014.6337468280238" valorfin="2545716.070791512" />
+      <debenture codativo="GROD13" qtdisponivel="11956" puposicao="1018.1989179627386" valorfin="12173586.263162503" />
+    </debenture>
+    <futuros>
+      <futuro codativo="DI1F28" qtdisponivel="355" puposicao="62305.24762007316" valorfin="22118362.905125972" />
+    </futuros>
+    <provisao>
+      <item tipo="ADM" valor="68673.63403957438" />
+      <item tipo="PERFORMANCE" valor="237533.2972294145" />
+      <item tipo="RESGATES_A_PAGAR" valor="0.0" />
+    </provisao>
+    <eventos />
+  </fundo>
+</arquivoposicao_4_01>

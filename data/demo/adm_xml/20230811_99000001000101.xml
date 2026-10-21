@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='utf-8'?>
+<arquivoposicao_4_01>
+  <fundo>
+    <header cnpj="99.000.001/0001-01" nome="Sim Ações FIA" dtposicao="20230811" cnpjadm="99.999.999/0001-99" nomeadm="Administradora Sim S.A." valorcota="1.0218275258" quantidade="117714717.83274087" patliq="120284138.87265113" />
+    <caixa saldo_disponivel="840040.3300715301" saldo_projetado="840040.3300715301" />
+    <acoes>
+      <acao codativo="ALFA3" qtdisponivel="100" puposicao="57.079490411751486" valorfin="5707.9490411751485" />
+      <acao codativo="BETA3" qtdisponivel="218100" puposicao="16.0833403507841" valorfin="3507776.530506012" />
+      <acao codativo="EPSI3" qtdisponivel="66500" puposicao="42.53351905872151" valorfin="2828479.0174049805" />
+      <acao codativo="GAMA4" qtdisponivel="35000" puposicao="19.486238913041745" valorfin="682018.3619564611" />
+      <acao codativo="IOTA3" qtdisponivel="75200" puposicao="52.37378578545572" valorfin="3938508.69106627" />
+      <acao codativo="KAPA3" qtdisponivel="191100" puposicao="58.21535385733043" valorfin="11124954.122135844" />
+      <acao codativo="LAMB3" qtdisponivel="142600" puposicao="61.209461191775894" valorfin="8728469.165947242" />
+      <acao codativo="MIUU4" qtdisponivel="525700" puposicao="22.960726422751332" valorfin="12070453.880440375" />
+      <acao codativo="NIUU3" qtdisponivel="23700" puposicao="69.98874965733927" valorfin="1658733.3668789407" />
+      <acao codativo="OMIC3" qtdisponivel="161800" puposicao="98.56465688659395" valorfin="15947761.484250901" />
+      <acao codativo="PIII4" qtdisponivel="75100" puposicao="8.475983413643048" valorfin="636546.3543645929" />
+      <acao codativo="ROOO3" qtdisponivel="11100" puposicao="104.15696206900635" valorfin="1156142.2789659705" />
+      <acao codativo="SIGM3" qtdisponivel="493000" puposicao="14.397495941981896" valorfin="7097965.499397075" />
+      <acao codativo="TAUU3" qtdisponivel="72900" puposicao="38.880306803674635" valorfin="2834374.365987881" />
+      <acao codativo="TETA3" qtdisponivel="110700" puposicao="39.49812660166237" valorfin="4372442.614804025" />
+      <acao codativo="UPSI4" qtdisponivel="73900" puposicao="98.02365135433695" valorfin="7243947.8350855" />
+      <acao codativo="XIII3" qtdisponivel="97100" puposicao="75.15671099981796" valorfin="7297716.638082324" />
+      <acao codativo="ZETA3" qtdisponivel="152700" puposicao="31.078357863268717" valorfin="4745665.245721133" />
+    </acoes>
+    <titpublico>
+      <titpublico codativo="LTN260102" qtdisponivel="1" puposicao="774.9356571544466" valorfin="774.9356571544466" />
+      <titpublico codativo="LTN270104" qtdisponivel="9585" puposicao="692.9080231783813" valorfin="6641523.402164785" />
+      <titpublico codativo="LTN290102" qtdisponivel="1890" puposicao="552.3472286794333" valorfin="1043936.262204129" />
+      <titpublico codativo="NTNB260817" qtdisponivel="4714" puposicao="1054.2588951201235" valorfin="4969776.431596262" />
+      <titpublico codativo="NTNB280815" qtdisponivel="1" puposicao="1041.3448659288313" valorfin="1041.3448659288313" />
+      <titpublico codativo="NTNB300815" qtdisponivel="8373" puposicao="1030.1480528637178" valorfin="8625429.646627909" />
+      <titpublico codativo="NTNB350515" qtdisponivel="2391" puposicao="993.0592951776215" valorfin="2374404.774769693" />
+    </titpublico>
+    <debenture />
+    <futuros />
+    <provisao>
+      <item tipo="ADM" valor="85623.709623552" />
+      <item tipo="PERFORMANCE" valor="0.0" />
+      <item tipo="RESGATES_A_PAGAR" valor="4827.94771942234" />
+    </provisao>
+    <eventos />
+  </fundo>
+</arquivoposicao_4_01>

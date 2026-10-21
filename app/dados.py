@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from app import formatacao as fmt
 from gestorasim.dados.universo import DESTINO_PADRAO
 
 AJUDA = ("Rode `python -m gestorasim.orquestrador --de 2023-01-02 --ate 2024-12-30` para gerar os dados "
@@ -93,9 +94,61 @@ def meta_ciclo() -> dict:
     return json.loads(arq.read_text()) if arq.exists() else {}
 
 
-def configurar(titulo: str) -> None:
+def datas_pregao() -> list[pd.Timestamp]:
+    """Pregões do ciclo gravado (da cota diária)."""
+    return sorted(pd.Timestamp(d) for d in tabela("cota_diaria")["data"].unique()) if existe("cota_diaria") else []
+
+
+def barra_lateral() -> None:
+    """Filtros globais (fundo e data) na barra lateral; persistem entre páginas via st.session_state."""
+    if not (existe("cota_diaria") and existe("fundos")):
+        return
+    datas, nomes = datas_pregao(), list(fundos().values())
+    ss = st.session_state
+    for k in ("gs_fundo", "gs_data"):  # mantém o valor quando o widget some numa página e volta em outra
+        if k in ss:
+            ss[k] = ss[k]
+    if ss.get("gs_fundo") not in nomes:
+        ss["gs_fundo"] = nomes[0]
+    if ss.get("gs_data") not in datas:
+        ss["gs_data"] = datas[-1]
+    with st.sidebar:
+        st.markdown("### Filtros")
+        st.selectbox("Fundo", nomes, key="gs_fundo")
+        st.selectbox("Data", datas, key="gs_data", format_func=lambda d: fmt.data(d))
+        st.caption("Valem para todas as páginas. Padrão: último pregão.")
+        if modo_demo():
+            st.caption(f"Dataset demo reduzido ({fmt.data(datas[0])} a {fmt.data(datas[-1])}).")
+
+
+def data_global() -> pd.Timestamp:
+    """Data escolhida na barra lateral (último pregão, se ainda não há escolha)."""
+    d = st.session_state.get("gs_data")
+    if d is not None:
+        return pd.Timestamp(d)
+    datas = datas_pregao()
+    return datas[-1] if datas else pd.Timestamp.today().normalize()
+
+
+def fundo_global() -> str:
+    """CNPJ do fundo escolhido na barra lateral (o primeiro, se ainda não há escolha)."""
+    fs = fundos()
+    nome = st.session_state.get("gs_fundo")
+    return next((c for c, n in fs.items() if n == nome), next(iter(fs)))
+
+
+def ate_data(df: pd.DataFrame, coluna: str = "data", data=None) -> pd.DataFrame:
+    """Linhas até a data global (inclusive)."""
+    return df[df[coluna] <= (data_global() if data is None else pd.Timestamp(data))]
+
+
+def configurar(titulo: str, real: str = "", glossario: tuple[str, ...] = ()) -> None:
+    """Cabeçalho padrão: config da página, barra lateral, título, 'o que esta tela faz numa gestora real' e glossário."""
+    from app import layout
+
     st.set_page_config(page_title=f"GestoraSim — {titulo}", page_icon="📈", layout="wide")
-    st.title(titulo)
+    barra_lateral()
+    layout.cabecalho(titulo, real, glossario)
 
 
 def exigir(*nomes: str) -> None:
@@ -113,12 +166,15 @@ def fundos() -> dict[str, str]:
 
 
 def escolher_fundo(rotulo: str = "Fundo", chave: str = "fundo") -> str:
-    fs = fundos()
-    nome = st.selectbox(rotulo, list(fs.values()), key=chave)
-    return next(c for c, n in fs.items() if n == nome)
+    """CNPJ do fundo da barra lateral (os argumentos são mantidos por compatibilidade)."""
+    return fundo_global()
 
 
-def escolher_data(datas: list, rotulo: str = "Data", chave: str = "data", padrao_ultima: bool = True):
-    datas = sorted(pd.Timestamp(d) for d in datas)
-    return st.selectbox(rotulo, datas, index=len(datas) - 1 if padrao_ultima else 0, key=chave,
-                        format_func=lambda d: f"{d:%Y-%m-%d}")
+def escolher_data(datas: list | None = None, rotulo: str = "Data", chave: str = "data", padrao_ultima: bool = True):
+    """Data da barra lateral; se `datas` for dado e não a contiver, a última data disponível até ela."""
+    d = data_global()
+    if datas is None:
+        return d
+    ds = sorted(pd.Timestamp(x) for x in datas)
+    ate = [x for x in ds if x <= d]
+    return ate[-1] if ate else ds[0]

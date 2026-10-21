@@ -1,0 +1,40 @@
+<?xml version='1.0' encoding='utf-8'?>
+<arquivoposicao_4_01>
+  <fundo>
+    <header cnpj="99.000.003/0001-92" nome="Sim Crédito Privado RF" dtposicao="20230703" cnpjadm="99.999.999/0001-99" nomeadm="Administradora Sim S.A." valorcota="1.0711098519" quantidade="109855902.66142823" patliq="117667739.633047" />
+    <caixa saldo_disponivel="28548776.611111097" saldo_projetado="28559366.47325159" />
+    <acoes />
+    <titpublico>
+      <titpublico codativo="LTN260102" qtdisponivel="5725" puposicao="765.3284572407152" valorfin="4381505.417703095" />
+      <titpublico codativo="LTN270104" qtdisponivel="1495" puposicao="684.9108608453862" valorfin="1023941.7369638523" />
+      <titpublico codativo="LTN290102" qtdisponivel="1220" puposicao="547.144747679932" valorfin="667516.5921695171" />
+      <titpublico codativo="NTNB260817" qtdisponivel="18210" puposicao="1021.7282062458518" valorfin="18605670.63573696" />
+      <titpublico codativo="NTNB280815" qtdisponivel="1" puposicao="1003.4939718973865" valorfin="1003.4939718973865" />
+      <titpublico codativo="NTNB300815" qtdisponivel="1516" puposicao="987.7755752230279" valorfin="1497467.7720381103" />
+      <titpublico codativo="NTNB350515" qtdisponivel="698" puposicao="942.5648483489128" valorfin="657910.2641475411" />
+    </titpublico>
+    <debenture>
+      <debenture codativo="ALEN11" qtdisponivel="20592" puposicao="1002.0900086973252" valorfin="20635037.45909532" />
+      <debenture codativo="BSAN12" qtdisponivel="12352" puposicao="1082.6813757817831" valorfin="13373280.353656584" />
+      <debenture codativo="DLOG14" qtdisponivel="13968" puposicao="1068.9908117522268" valorfin="14931663.658555103" />
+      <debenture codativo="EVAR15" qtdisponivel="3133" puposicao="997.4347458962654" valorfin="3124963.058893" />
+      <debenture codativo="GROD13" qtdisponivel="10236" puposicao="999.6776698327485" valorfin="10232700.628408013" />
+    </debenture>
+    <futuros>
+      <futuro codativo="DI1F26" qtdisponivel="4" puposicao="76532.84572407152" valorfin="306131.3828962861" />
+      <futuro codativo="DI1F28" qtdisponivel="341" puposicao="61204.46947291354" valorfin="20870724.090263516" />
+    </futuros>
+    <provisao>
+      <item tipo="ADM" valor="3713.5483479918935" />
+      <item tipo="PERFORMANCE" valor="20574.363195613583" />
+      <item tipo="RESGATES_A_PAGAR" valor="0.0" />
+    </provisao>
+    <eventos>
+      <evento tipo="CUPOM" codativo="ALEN11" valor="1155786.4034461202" />
+      <evento tipo="CUPOM" codativo="BSAN12" valor="378268.44967962714" />
+      <evento tipo="CUPOM" codativo="DLOG14" valor="511591.499082258" />
+      <evento tipo="CUPOM" codativo="EVAR15" valor="214382.97029860955" />
+      <evento tipo="CUPOM" codativo="GROD13" valor="616658.7437923928" />
+    </eventos>
+  </fundo>
+</arquivoposicao_4_01>
