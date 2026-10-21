@@ -4,7 +4,8 @@ Convenções (documentadas porque o MVP ainda não tem MTM nem ajuste diário de
 - PL = caixa + valor de mercado dos ativos, exceto futuros de DI (valor 0; só exposição nocional).
 - Exposição = |quantidade × preço|; percentuais por classe usam exposição / PL.
 - Limite por emissor não se aplica a Tesouro Nacional nem a futuros (contraparte central).
-- Liquidez D+1 = (caixa + ações + títulos públicos) / PL.
+- Liquidez D+1 = (caixa + títulos públicos + ações × fração liquidável) / PL, com fração liquidável =
+  min(1, 20% do volume do dia / |quantidade|); sem volume informado, a fração é 1 (regra antiga).
 - Alavancagem = Σ exposição / PL (caixa fora).
 - Rating sem limite próprio herda o do rating pior mais próximo presente no regulamento; pior que todos = 0.
 """
@@ -15,13 +16,13 @@ from dataclasses import asdict, dataclass
 
 import pandas as pd
 
-from gestorasim.dominio import RATINGS, ClasseAtivo, LimitesRegulamento
+from gestorasim.dominio import PARTICIPACAO_LIQUIDEZ, RATINGS, ClasseAtivo, LimitesRegulamento
 
 EPS = 1e-9
 OK, VIOLADO = "OK", "VIOLADO"
 LIQUIDAS = (ClasseAtivo.ACAO, ClasseAtivo.TITULO_PUBLICO)
 ISENTAS_EMISSOR = (ClasseAtivo.TITULO_PUBLICO, ClasseAtivo.FUTURO_DI)
-COLUNAS_POSICOES = ["quantidade", "preco", "valor", "exposicao", "classe", "emissor", "rating"]
+COLUNAS_POSICOES = ["quantidade", "preco", "valor", "exposicao", "classe", "emissor", "rating", "fracao_d1"]
 
 
 @dataclass(frozen=True)
@@ -40,8 +41,9 @@ class ResultadoRegra:
 
 @dataclass(frozen=True)
 class Carteira:
-    caixa: float
+    caixa: float  # projetado
     posicoes: pd.DataFrame  # índice = ticker; colunas COLUNAS_POSICOES
+    caixa_disponivel: float | None = None  # liquidado; só informado no pós-trade
 
     @property
     def pl(self) -> float:
@@ -49,8 +51,10 @@ class Carteira:
 
 
 def montar_carteira(quantidades: dict[str, int], caixa: float, meta: pd.DataFrame,
-                    precos: pd.Series) -> Carteira:
-    """`meta` indexado por ticker (classe, emissor, rating); `precos` = fechamento do dia."""
+                    precos: pd.Series, volume: pd.Series | None = None,
+                    caixa_disponivel: float | None = None) -> Carteira:
+    """`meta` indexado por ticker (classe, emissor, rating); `precos` = preço oficial do dia (mtm);
+    `volume` = volume do dia (limita a liquidez D+1 das ações)."""
     linhas = {}
     for tk, q in quantidades.items():
         if q == 0:
@@ -59,16 +63,19 @@ def montar_carteira(quantidades: dict[str, int], caixa: float, meta: pd.DataFram
         px = float(precos[tk])
         classe = ClasseAtivo(m["classe"])
         nocional = q * px
+        fracao = 1.0
+        if volume is not None and classe == ClasseAtivo.ACAO:
+            fracao = min(1.0, PARTICIPACAO_LIQUIDEZ * float(volume.get(tk, 0.0)) / abs(q))
         linhas[tk] = {
             "quantidade": q, "preco": px,
             "valor": 0.0 if classe == ClasseAtivo.FUTURO_DI else nocional,
             "exposicao": abs(nocional), "classe": classe, "emissor": m["emissor"],
-            "rating": None if pd.isna(m["rating"]) else m["rating"],
+            "rating": None if pd.isna(m["rating"]) else m["rating"], "fracao_d1": fracao,
         }
     df = pd.DataFrame.from_dict(linhas, orient="index", columns=COLUNAS_POSICOES)
     if df.empty:
         df = pd.DataFrame(columns=COLUNAS_POSICOES)
-    return Carteira(caixa=float(caixa), posicoes=df)
+    return Carteira(caixa=float(caixa), posicoes=df, caixa_disponivel=caixa_disponivel)
 
 
 def _res(regra, detalhe, valor, limite, sentido="max") -> ResultadoRegra:
@@ -137,10 +144,25 @@ def regra_rating(cart: Carteira, reg: LimitesRegulamento) -> list[ResultadoRegra
     ]
 
 
-def regra_liquidez(cart: Carteira, reg: LimitesRegulamento) -> list[ResultadoRegra]:
+def liquidez_d1(cart: Carteira, corrigida: bool = True) -> float:
+    """Fração do PL liquidável em D+1. `corrigida=False` reproduz a regra do bloco 2 (ações 100%)."""
     p = cart.posicoes
-    liquido = cart.caixa + float(p.loc[p["classe"].isin(LIQUIDAS), "valor"].sum())
-    return [_res("liquidez_minima", "D+1", _frac(liquido, cart.pl), reg.liquidez_minima, "min")]
+    acoes = p["classe"] == ClasseAtivo.ACAO
+    frac = p["fracao_d1"] if corrigida else 1.0
+    liquido = (cart.caixa + float((p.loc[acoes, "valor"] * (frac[acoes] if corrigida else 1.0)).sum())
+               + float(p.loc[p["classe"] == ClasseAtivo.TITULO_PUBLICO, "valor"].sum()))
+    return _frac(liquido, cart.pl)
+
+
+def regra_liquidez(cart: Carteira, reg: LimitesRegulamento) -> list[ResultadoRegra]:
+    return [_res("liquidez_minima", "D+1", liquidez_d1(cart), reg.liquidez_minima, "min")]
+
+
+def regra_caixa_negativo(cart: Carteira) -> list[ResultadoRegra]:
+    """Pós-trade: saldo liquidado negativo é descoberto e paga CDI + spread (fração do PL >= 0)."""
+    if cart.caixa_disponivel is None:
+        return []
+    return [_res("caixa_negativo", "caixa disponivel", _frac(cart.caixa_disponivel, cart.pl), 0.0, "min")]
 
 
 def regra_alavancagem(cart: Carteira, reg: LimitesRegulamento) -> list[ResultadoRegra]:
@@ -151,4 +173,4 @@ def regra_alavancagem(cart: Carteira, reg: LimitesRegulamento) -> list[Resultado
 def todas_as_regras(cart: Carteira, reg: LimitesRegulamento) -> list[ResultadoRegra]:
     return (regra_caixa(cart) + regra_posicao_vendida(cart) + regra_emissor(cart, reg)
             + regra_classe(cart, reg) + regra_rating(cart, reg) + regra_liquidez(cart, reg)
-            + regra_alavancagem(cart, reg))
+            + regra_alavancagem(cart, reg) + regra_caixa_negativo(cart))

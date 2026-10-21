@@ -35,8 +35,8 @@ def painel(prec):
 
 
 @pytest.fixture(scope="module")
-def serie(tmp_path_factory):
-    return rodar_serie(SEED, tmp_path_factory.mktemp("serie"), fim="2023-04-14")
+def serie(serie_curta):
+    return serie_curta
 
 
 # ----------------------------------------------------------------------- curva e funções puras
@@ -282,7 +282,7 @@ def test_fechamento_da_atribuicao_de_pnl(serie):
 
 def test_atribuicao_tem_todas_as_componentes(serie, u):
     p = serie["pnl_atribuicao"]
-    for col in ("efeito_preco", "carrego", "eventos", "ajuste_futuros", "custos"):
+    for col in ("efeito_preco", "carrego", "eventos", "ajuste_futuros", "custos", "juros_caixa"):
         assert (p[col] != 0).any(), col
     assert (p["custos"] <= 1e-9).all()  # slippage só custa
     acoes = p[p.ticker.isin(u["ativos"].query("classe == 'ACAO'")["ticker"])]

@@ -12,18 +12,16 @@ from gestorasim.boletagem.geradores import gerar_ordens_exemplo
 from gestorasim.dados import carregar_fundos, gerar_universo
 from gestorasim.dados.universo import DESTINO_PADRAO
 from gestorasim.enquadramento import montar_carteira
+from gestorasim.mtm.cache import painel_oficial
 from gestorasim.posicao import Ledger, gerar_carteira_inicial
 from gestorasim.util import fmt3
 
 TABELAS_SAIDA = ("ordens", "execucoes", "alocacoes", "auditoria", "pretrade", "ledger", "volume_diario")
 
 
-def precos_do_dia(tabelas: dict[str, pd.DataFrame], data) -> pd.Series:
-    """Fechamento (ações) e PU (renda fixa/futuros) do dia, indexado por ticker."""
-    data = pd.Timestamp(data)
-    a = tabelas["precos_acoes"].query("data == @data").set_index("ticker")["preco"]
-    r = tabelas["precos_renda_fixa"].query("data == @data").set_index("ticker")["pu"]
-    return pd.concat([a, r])
+def precos_do_dia(tabelas: dict[str, pd.DataFrame], data, seed: int = 42) -> pd.Series:
+    """Preço oficial do dia (mtm), indexado por ticker; ativos sem preço (vencidos) ficam fora."""
+    return painel_oficial(tabelas, seed).loc[pd.Timestamp(data)].dropna()
 
 
 def rodar_dia_exemplo(seed: int = 42, destino: Path | str | None = None,
@@ -36,9 +34,9 @@ def rodar_dia_exemplo(seed: int = 42, destino: Path | str | None = None,
     d0, dia = datas[0], datas[indice_dia]
 
     ledger = Ledger()
-    gerar_carteira_inicial(ledger, fundos, meta, precos_do_dia(tabelas, d0), d0, seed)
+    gerar_carteira_inicial(ledger, fundos, meta, precos_do_dia(tabelas, d0, seed), d0, seed)
 
-    precos = precos_do_dia(tabelas, dia)
+    precos = precos_do_dia(tabelas, dia, seed)
     volume_df = gerar_volume(meta, datas, seed)
     volume = volume_df.query("data == @dia").set_index("ticker")["volume"]
 

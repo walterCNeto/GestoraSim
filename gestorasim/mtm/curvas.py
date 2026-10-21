@@ -12,6 +12,7 @@ from gestorasim.dados import calendario
 RATINGS_DEBENTURES = ("AAA", "AA+", "AA-", "A+", "A-")
 VOL_SPREAD_DIARIA = {"AAA": 0.00008, "AA+": 0.00010, "AA-": 0.00014, "A+": 0.00020, "A-": 0.00030}
 INFLACAO_IMPLICITA_MEDIA = 0.04
+VERTICES_RISCO = (21, 63, 126, 252, 504, 1260)  # vértices de risco (du) das curvas pré e real
 
 
 class CalendarioDU:
@@ -47,6 +48,18 @@ def taxa_flat_forward(vert_du: np.ndarray, taxas: np.ndarray, du: float) -> floa
     return float(np.exp(-v * 252 / du) - 1)
 
 
+def peso_vertice(k: int, du: float) -> float:
+    """Peso triangular do vértice de risco k em `du` (soma 1 em toda a curva; constante nas pontas)."""
+    v = VERTICES_RISCO
+    if k > 0 and du <= v[k - 1]:
+        return 0.0
+    if k < len(v) - 1 and du >= v[k + 1]:
+        return 0.0
+    if du <= v[k]:
+        return 1.0 if k == 0 else (du - v[k - 1]) / (v[k] - v[k - 1])
+    return 1.0 if k == len(v) - 1 else (v[k + 1] - du) / (v[k + 1] - v[k])
+
+
 @dataclass(frozen=True)
 class EstadoMercado:
     data: pd.Timestamp
@@ -57,13 +70,17 @@ class EstadoMercado:
     cdi_aa: float
     cdi_acum: float  # fator de CDI acumulado desde a 1ª data (realizado)
     ipca_indice: float  # número-índice realizado
+    bump_real: tuple | None = None  # choques (decimais) nos vértices de risco da curva real, só p/ sensibilidades
 
     def taxa_pre(self, du: float) -> float:
         return taxa_flat_forward(self.vert_du, self.taxas, du)
 
     def taxa_real(self, du: float) -> float:
-        """Curva real sintética = pré menos inflação implícita (razão de fatores)."""
-        return (1 + self.taxa_pre(du)) / (1 + self.inflacao_implicita) - 1
+        """Curva real sintética = pré menos inflação implícita (razão de fatores), mais bump nos vértices."""
+        r = (1 + self.taxa_pre(du)) / (1 + self.inflacao_implicita) - 1
+        if self.bump_real is not None:
+            r += sum(b * peso_vertice(k, du) for k, b in enumerate(self.bump_real) if b)
+        return r
 
 
 def gerar_inflacao_implicita(rng: np.random.Generator, n: int) -> np.ndarray:

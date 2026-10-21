@@ -42,16 +42,8 @@ def test_vinte_acoes_504_dias(u):
 
 def test_sem_precos_negativos_ou_nulos(u):
     assert (u["precos_acoes"]["preco"] > 0).all()
-    rf = u["precos_renda_fixa"]
-    assert (rf["pu"] > 0).all() and rf["pu"].notna().all()
     assert (u["curva_pre"]["taxa"] > 0).all()
     assert (u["eventos"]["valor_por_unidade"] > 0).all()
-
-
-def test_pu_renda_fixa_plausivel(u):
-    rf = u["precos_renda_fixa"]
-    tit = rf[rf["ticker"].str.startswith(("LTN", "NTNB", "ALEN", "BSAN", "GROD", "DLOG", "EVAR"))]
-    assert tit["pu"].between(200, 3000).all()
 
 
 def _assert_dias_uteis(serie):
@@ -62,7 +54,7 @@ def _assert_dias_uteis(serie):
 def test_datas_em_dia_util(u):
     _assert_dias_uteis(u["calendario"]["data"])
     for tabela, cols in {
-        "precos_acoes": ["data"], "precos_renda_fixa": ["data"], "fluxo_cotistas": ["data"],
+        "precos_acoes": ["data"], "fluxo_cotistas": ["data"],
         "eventos": ["data_com", "data_pagamento"], "ativos": ["vencimento"],
     }.items():
         for c in cols:
@@ -123,7 +115,7 @@ def test_cotistas_e_fluxo(u):
 
 def test_determinismo(u, tmp_path):
     outro = gerar_universo(seed=42, destino=tmp_path)
-    for nome in ("precos_acoes", "precos_renda_fixa", "fluxo_cotistas", "eventos"):
+    for nome in ("precos_acoes", "fluxo_cotistas", "eventos"):
         pd.testing.assert_frame_equal(u[nome], outro[nome])
     diferente = gerar_universo(seed=7, destino=tmp_path / "b")
     assert not diferente["precos_acoes"]["preco"].equals(u["precos_acoes"]["preco"])
@@ -164,3 +156,32 @@ def test_ativo_validacoes():
     with pytest.raises(ValidationError):
         Ativo(ticker="X", classe=ClasseAtivo.ACAO, emissor="e", vencimento="2030-01-01")
     assert RATINGS.index("AAA") == 0
+
+
+def test_preco_de_renda_fixa_vem_so_do_mtm(u, destino):
+    assert "precos_renda_fixa" not in u
+    assert not (destino / "precos_renda_fixa.parquet").exists()
+
+
+def test_preco_cai_pelo_dividendo_na_data_ex_e_retorno_total_inalterado(u):
+    from gestorasim.dados import mercado
+    from gestorasim.dados.universo import DATA_INICIAL, _rng
+    datas = pd.DatetimeIndex(u["calendario"]["data"])
+    corr = mercado.gerar_correlacao(_rng(42, 0))
+    bruto = mercado.gerar_precos_acoes(_rng(42, 1), datas, corr).pivot(index="data", columns="ticker", values="preco")
+    adj = u["precos_acoes"].pivot(index="data", columns="ticker", values="preco")
+    divs = u["eventos"].query("tipo == 'DIVIDENDO'")
+    assert len(divs) >= 30
+    for tk, g in divs.groupby("ticker"):
+        ex = {datas[datas.get_loc(d) + 1]: v for d, v in zip(g["data_com"], g["valor_por_unidade"])}
+        # retorno total com dividendo reinvestido no ex = retorno do GBM original (preço bruto)
+        tr = 1.0
+        for t in range(1, len(datas)):
+            tr *= (adj[tk].iloc[t] + ex.get(datas[t], 0.0)) / adj[tk].iloc[t - 1]
+        assert tr * adj[tk].iloc[0] == pytest.approx(bruto[tk].iloc[-1], rel=1e-9)
+        # no ex o preço cai pelo dividendo: retorno de preço = retorno do GBM − D/P_{ex-1}
+        for d, v in ex.items():
+            t = datas.get_loc(d)
+            gbm = bruto[tk].iloc[t] / bruto[tk].iloc[t - 1]
+            assert adj[tk].iloc[t] == pytest.approx(adj[tk].iloc[t - 1] * gbm - v, rel=1e-9)
+        assert (adj[tk] <= bruto[tk] * (1 + 1e-12)).all()

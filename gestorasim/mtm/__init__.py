@@ -5,6 +5,7 @@ from gestorasim.mtm.precificacao import (
 
 __all__ = ["CAL", "EstadoMercado", "Precificador", "ajuste_di", "construir_estados",
            "fracoes_amortizacao", "pu_debenture", "pu_di", "pu_ltn", "pu_ntnb", "taxa_flat_forward", "vna"]
-from gestorasim.mtm.serie import resumo, rodar_serie, serie_pl  # noqa: E402
+from gestorasim.mtm.cache import painel_oficial  # noqa: E402
+from gestorasim.mtm.serie import carregar_serie, resumo, rodar_serie, serie_pl  # noqa: E402
 
-__all__ += ["resumo", "rodar_serie", "serie_pl"]
+__all__ += ["carregar_serie", "painel_oficial", "resumo", "rodar_serie", "serie_pl"]

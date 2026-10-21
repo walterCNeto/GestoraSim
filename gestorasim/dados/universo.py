@@ -41,16 +41,16 @@ def gerar_universo(seed: int = 42, destino: Path | str | None = None) -> dict[st
     cdi = mercado.gerar_cdi(fatores)
     ipca = mercado.gerar_ipca(_rng(seed, 3), datas)
 
-    a_ltn, p_ltn = renda_fixa.gerar_ltn(_rng(seed, 4), datas, beta)
-    a_ntnb, p_ntnb, ev_ntnb = renda_fixa.gerar_ntnb(_rng(seed, 5), datas, beta, ipca)
-    a_deb, p_deb, ev_deb = renda_fixa.gerar_debentures(_rng(seed, 6), datas, cdi, ipca)
-    a_di, p_di = renda_fixa.gerar_futuros_di(_rng(seed, 7), datas, beta)
+    a_ltn, _ = renda_fixa.gerar_ltn(_rng(seed, 4), datas, beta)
+    a_ntnb, _, ev_ntnb = renda_fixa.gerar_ntnb(_rng(seed, 5), datas, beta, ipca)
+    a_deb, _, ev_deb = renda_fixa.gerar_debentures(_rng(seed, 6), datas, cdi, ipca)
+    a_di, _ = renda_fixa.gerar_futuros_di(_rng(seed, 7), datas, beta)
 
     lista_fundos: list[Fundo] = fundos.gerar_fundos(datas[0])
     cotistas = fundos.gerar_cotistas(_rng(seed, 8), lista_fundos)
     fluxo = fundos.gerar_fluxo_cotistas(_rng(seed, 9), cotistas, datas)
 
-    ev_div = eventos.gerar_dividendos(_rng(seed, 10), datas, precos_acoes)
+    ev_div, precos_acoes = eventos.gerar_dividendos(_rng(seed, 10), datas, precos_acoes)
     df_eventos = pd.DataFrame(ev_div + ev_ntnb + ev_deb).sort_values(
         ["data_pagamento", "ticker", "tipo"], ignore_index=True
     )
@@ -67,8 +67,6 @@ def gerar_universo(seed: int = 42, destino: Path | str | None = None) -> dict[st
         "curva_pre": mercado.curva_pre_vertices(fatores),
         "cdi": cdi,
         "ipca": ipca,
-        "precos_renda_fixa": pd.concat([p_ltn, p_ntnb, p_deb, p_di], ignore_index=True)
-        .sort_values(["ticker", "data"], ignore_index=True),
         "fundos": pd.DataFrame([
             {**f.model_dump(mode="json", exclude={"regulamento"}),
              "data_inicio": pd.Timestamp(f.data_inicio),
@@ -79,6 +77,8 @@ def gerar_universo(seed: int = 42, destino: Path | str | None = None) -> dict[st
         "fluxo_cotistas": fluxo,
         "eventos": df_eventos,
     }
+    # o preço oficial de renda fixa vem do mtm (fonte única); tabela do bloco 1 foi eliminada
+    (destino / "precos_renda_fixa.parquet").unlink(missing_ok=True)
     for nome, df in tabelas.items():
         df.to_parquet(destino / f"{nome}.parquet", index=False)
     return tabelas

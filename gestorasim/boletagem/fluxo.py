@@ -11,6 +11,7 @@ from gestorasim.boletagem.auditoria import Trilha
 from gestorasim.boletagem.modelos import EstadoOrdem as E
 from gestorasim.boletagem.modelos import OrdemAgregada
 from gestorasim.boletagem.rateio import ratear
+from gestorasim.dados import calendario
 from gestorasim.dominio import Fundo
 from gestorasim.enquadramento import avaliar_pre_trade, lote, violacoes
 from gestorasim.posicao import Ledger, aplicar_execucao
@@ -21,10 +22,12 @@ USUARIO_MESA = "mesa.execucao"
 
 class Mesa:
     def __init__(self, ledger: Ledger, fundos: list[Fundo], meta: pd.DataFrame, data,
-                 precos: pd.Series, volume: pd.Series) -> None:
+                 precos: pd.Series, volume: pd.Series,
+                 sigma_di: dict[str, float] | None = None) -> None:
         self.ledger, self.meta, self.data = ledger, meta, pd.Timestamp(data)
         self.fundos = {f.cnpj: f for f in fundos}
-        self.precos, self.volume = precos, volume
+        self.precos, self.volume, self.sigma_di = precos, volume, sigma_di
+        self._datas_caixa = [calendario.somar_du(self.data, k) for k in range(3)]
         self.trilha = Trilha(datetime.combine(self.data.date(), datetime.min.time()).replace(hour=9))
         self.ordens: dict[str, OrdemAgregada] = {}
         self._pretrade: list[dict] = []
@@ -48,7 +51,9 @@ class Mesa:
             f = self.fundos[cnpj]
             res = avaliar_pre_trade(self.ledger.quantidades(cnpj), self.ledger.caixa_projetado(cnpj),
                                     f.regulamento, self.meta, self.precos, ticker=ordem.ticker,
-                                    lado=ordem.lado.value, quantidade=qtd)
+                                    lado=ordem.lado.value, quantidade=qtd, volume=self.volume,
+                                    perfil_caixa=[self.ledger.caixa_disponivel(cnpj, d) for d in self._datas_caixa],
+                                    sigma_di=self.sigma_di)
             n_regras += len(res)
             for r in res:
                 self._pretrade.append({"ordem_id": ordem.id, "fundo_cnpj": cnpj, **r.asdict()})

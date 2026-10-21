@@ -5,10 +5,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from gestorasim.dominio import ClasseAtivo
+from gestorasim.dominio import PARTICIPACAO_LIQUIDEZ, ClasseAtivo
 from gestorasim.enquadramento import lote
 
-PARTICIPACAO_MAX = 0.20  # fração do volume diário executável
+PARTICIPACAO_MAX = PARTICIPACAO_LIQUIDEZ  # fração do volume diário executável
 SLIPPAGE_K = 0.05  # slippage = K × participação (1% na participação máxima)
 N_FATIAS = 4  # fills por ordem
 
