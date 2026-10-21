@@ -31,5 +31,5 @@ def ciclo_curto(tmp_path_factory):
     from gestorasim.orquestrador import ConfigCiclo, Orquestrador
 
     destino = tmp_path_factory.mktemp("ciclo_sessao")
-    orq = Orquestrador(ConfigCiclo(seed=SEED, destino=destino, janela_hist=15, burn_in=5, ckpt_cada=10))
+    orq = Orquestrador(ConfigCiclo(seed=SEED, destino=destino, janela_hist=15, burn_in=5, ckpt_cada=10, taxa_injecao=0.15))
     return orq, orq.executar("2023-01-02", "2023-02-10"), destino
