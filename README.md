@@ -7,6 +7,7 @@ MVP educacional de sistema de gestão de ativos. **Todos os dados são simulados
 ```bash
 pip install -e ".[dev]"
 python -m gestorasim.dados     # gera data/sim/*.parquet (seed=42) e imprime um resumo
+python -m gestorasim.boletagem # roda um dia de boletagem (ordens, pré-trade, execução, rateio)
 pytest
 ```
 
@@ -29,8 +30,9 @@ Convenções: nomes em português; números em relatórios e prints com 3 casas 
 
 ## Roadmap
 
-- **Bloco 1 (atual):** `dominio` + `dados`.
-- **Bloco 2:** `boletagem` e `posicao` — ordens, execução simulada, posição e caixa; processamento dos eventos.
+- **Bloco 1:** `dominio` + `dados`.
+- **Bloco 2 (atual):** `boletagem`, `enquadramento` (pré-trade) e `posicao` mínima — ciclo de vida da ordem com trilha de auditoria, ordem agregada, execução simulada, rateio. Saídas em `data/sim/` (`ordens`, `execucoes`, `alocacoes`, `auditoria`, `pretrade`, `ledger`).
+- **Bloco 2b (pendente):** processamento dos eventos (dividendos, cupons, amortização) na posição.
 - **Bloco 3:** `mtm` — marcação a mercado (ações, LTN/NTN-B, debêntures, DI) sobre a curva simulada.
 - **Bloco 4:** `risco` e `enquadramento` — VaR/volatilidade/DV01 e checagem dos limites do regulamento.
 - **Bloco 5:** `conciliacao` e `cota` — conciliação posição × custódia, cota, aplicações/resgates.
