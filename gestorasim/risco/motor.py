@@ -13,6 +13,7 @@ from gestorasim.risco.estatistica import (
 )
 from gestorasim.risco.liquidez import bucket, dias_para_zerar, matriz_liquidez
 from gestorasim.risco.sensibilidades import CENARIOS, CalculadoraSens
+from gestorasim.enquadramento.regras import classe_de
 
 JANELA_HISTORICA = 252
 JANELA_BASILEIA = 250
@@ -64,62 +65,58 @@ def metricas_politica(calc: CalculadoraSens, fatores, q: dict[str, int], i: int,
     return {"var_pct": var / pl, "stress_pct": -min(min(stress.values()), 0.0) / pl}
 
 
-def calcular_risco(serie: dict[str, pd.DataFrame], tabelas: dict[str, pd.DataFrame], prec, painel: pd.DataFrame,
-                   volume: pd.DataFrame, calc: CalculadoraSens, janela: int = JANELA_HISTORICA,
-                   burn_in: int = BURN_IN_BACKTEST) -> dict[str, pd.DataFrame]:
-    """Tabelas risco_diario, sensibilidades, stress, backtest_var, liquidez para todos os fundos e datas."""
-    fatores = calc.fatores
-    pos = serie["posicoes_diarias"]
-    Q = {k: dict(zip(g["ticker"], g["quantidade"])) for k, g in pos.groupby(["data", "fundo_cnpj"])}
-    pl = serie["pl_diario"].set_index(["data", "fundo_cnpj"])
-    hip = pnl_hipotetico(serie, tabelas, prec)
-    primeira_data = pl.index.get_level_values(0).min()
-    i_primeira = prec.i_de[primeira_data]
-    idx = fatores.idx
-    pre_idx = [idx[f"PRE:{v}"] for v in VERTICES_RISCO]
-    real_idx = [idx[f"REAL:{v}"] for v in VERTICES_RISCO]
-    meta = prec.meta
+class MotorRiscoDiario:
+    """Risco de um fundo em um pregão, sobre a carteira de fechamento. Guarda só o VaR do dia anterior
+    (para o backtest); os percentuais são sobre o PL LÍQUIDO (cota_diaria)."""
 
-    r_rows, s_rows, st_rows, l_rows = [], [], [], []
-    anterior: dict[str, dict] = {}
-    for (data, c), row in pl.sort_index().iterrows():
-        i = prec.i_de[data]
-        q = Q.get((data, c), {})
-        PL = float(row["pl"])
+    def __init__(self, prec, painel: pd.DataFrame, volume: pd.DataFrame, calc: CalculadoraSens,
+                 janela: int = JANELA_HISTORICA, burn_in: int = BURN_IN_BACKTEST) -> None:
+        self.prec, self.painel, self.volume, self.calc = prec, painel, volume, calc
+        self.janela, self.burn_in = janela, burn_in
+        self.meta, self.fatores = prec.meta, calc.fatores
+        idx = self.fatores.idx
+        self.pre_idx = [idx[f"PRE:{v}"] for v in VERTICES_RISCO]
+        self.real_idx = [idx[f"REAL:{v}"] for v in VERTICES_RISCO]
+        self.anterior: dict[str, dict] = {}  # estado: VaR do dia anterior por fundo
+        self.i_primeira: int | None = None  # estado: 1º pregão da série (define o burn-in)
+
+    def dia(self, i: int, data: pd.Timestamp, cnpj: str, nome: str, q: dict[str, int], pl_liquido: float,
+            caixa_projetado: float, hip_limpo: float | None, hip_sujo: float | None) -> dict:
+        """Devolve {'risco': linha, 'sens': [...], 'stress': [...], 'liq': [...]} do fundo no pregão `i`."""
+        calc, fatores, meta, c, PL = self.calc, self.fatores, self.meta, cnpj, float(pl_liquido)
+        if self.i_primeira is None:
+            self.i_primeira = i
         delta, gama = calc.carteira(q, i)
         cov = fatores.cov[i]
         var_p = var_delta_normal(delta, cov) if not np.isnan(cov).any() else np.nan
         var_h = es_h = pior_hist = np.nan
-        if i >= janela:
-            choques = fatores.d_f[i - janela + 1:i + 1]
-            pnl_s = pnl_delta_gama(delta, gama, choques)
+        if i >= self.janela:
+            pnl_s = pnl_delta_gama(delta, gama, fatores.d_f[i - self.janela + 1:i + 1])
             var_h, es_h = var_es_historico(pnl_s)
             pior_hist = float(pnl_s.min())
         stress = calc.stress_carteira(q, i)
-        for nome, v in stress.items():
-            st_rows.append((data, c, nome, v, v / PL))
+        st_rows = [(data, c, n, v, v / PL) for n, v in stress.items()]
         st_rows.append((data, c, "PIOR_DIA_HIST", pior_hist, pior_hist / PL if np.isfinite(pior_hist) else np.nan))
-        for j in np.flatnonzero((delta != 0) | (gama != 0)):
-            s_rows.append((data, c, fatores.nomes[j], float(delta[j]), float(gama[j])))
+        s_rows = [(data, c, fatores.nomes[j], float(delta[j]), float(gama[j]))
+                  for j in np.flatnonzero((delta != 0) | (gama != 0))]
 
-        Pv, vol = painel.iloc[i].dropna(), volume.iloc[i]
-        cart_ant = montar_carteira(q, float(row["caixa_projetado"]), meta, Pv)
-        cart = montar_carteira(q, float(row["caixa_projetado"]), meta, Pv, vol)
-        lista = []
+        Pv, vol = self.painel.iloc[i].dropna(), self.volume.iloc[i]
+        cart_ant = montar_carteira(q, caixa_projetado, meta, Pv)
+        cart = montar_carteira(q, caixa_projetado, meta, Pv, vol)
+        lista, l_rows = [], []
         for tk, qt in q.items():
-            if meta.loc[tk, "classe"] == "FUTURO_DI":
+            if classe_de(meta, tk) == "FUTURO_DI":
                 continue
             dias = dias_para_zerar(qt, float(vol[tk]))
-            valor = float(cart.posicoes.loc[tk, "valor"])
+            valor = cart.linha(tk).valor
             lista.append((valor, dias))
             l_rows.append((data, c, tk, valor, dias, bucket(dias)))
-        mat = matriz_liquidez(lista, float(row["caixa_projetado"]), PL)
+        mat = matriz_liquidez(lista, caixa_projetado, PL)
 
-        dv01 = float(delta[pre_idx].sum() + delta[real_idx].sum())
-        ant = anterior.get(c, {})
-        h = hip.loc[(data, c)] if (data, c) in hip.index else None
-        pnl_s = float(h["pnl_hipotetico"]) if ant and h is not None else np.nan
-        pnl_l = float(h["pnl_hipotetico_limpo"]) if ant and h is not None else np.nan
+        dv01 = float(delta[self.pre_idx].sum() + delta[self.real_idx].sum())
+        ant = self.anterior.get(c, {})
+        pnl_s = float(hip_sujo) if ant and hip_sujo is not None else np.nan
+        pnl_l = float(hip_limpo) if ant and hip_limpo is not None else np.nan
         pode_p, pode_h = bool(ant) and np.isfinite(ant["var_p"]), bool(ant) and np.isfinite(ant["var_h"])
         exc = {
             "excecao_param": bool(pnl_l < -ant["var_p"]) if pode_p else None,
@@ -127,28 +124,56 @@ def calcular_risco(serie: dict[str, pd.DataFrame], tabelas: dict[str, pd.DataFra
             "excecao_param_sujo": bool(pnl_s < -ant["var_p"]) if pode_p else None,
             "excecao_hist_sujo": bool(pnl_s < -ant["var_h"]) if pode_h else None,
         }
-        r_rows.append({
-            "data": data, "fundo_cnpj": c, "fundo": row["fundo"], "pl": PL,
+        pior_stress = min(min(stress.values()), 0.0)
+        linha = {
+            "data": data, "fundo_cnpj": c, "fundo": nome, "pl": PL,
             "var_param_99": var_p, "var_param_pct": var_p / PL, "var_hist_99": var_h, "var_hist_pct": var_h / PL,
             "es_hist_975": es_h, "es_hist_pct": es_h / PL, "dv01_total": dv01, "duration_pl": -dv01 / (PL * 1e-4),
-            "stress_pior": min(min(stress.values()), 0.0),
-            "stress_pior_pct": min(min(stress.values()), 0.0) / PL,
-            "pior_dia_hist": pior_hist, "liquidez_d1": liquidez_d1(cart), "liquidez_d1_antes": liquidez_d1(cart_ant, corrigida=False),
+            "stress_pior": pior_stress, "stress_pior_pct": pior_stress / PL, "pior_dia_hist": pior_hist,
+            "liquidez_d1": liquidez_d1(cart, True, PL), "liquidez_d1_antes": liquidez_d1(cart_ant, False, PL),
             **mat, "pnl_hipotetico_limpo": pnl_l, "pnl_hipotetico": pnl_s, **exc,
             "var_param_ant": ant.get("var_p", np.nan), "var_hist_ant": ant.get("var_h", np.nan),
-            "em_burn_in": (i - i_primeira) < burn_in,
-        })
-        anterior[c] = {"var_p": var_p, "var_h": var_h}
+            "em_burn_in": (i - self.i_primeira) < self.burn_in,
+        }
+        self.anterior[c] = {"var_p": var_p, "var_h": var_h}
+        return {"risco": linha, "sens": s_rows, "stress": st_rows, "liq": l_rows}
 
-    risco = pd.DataFrame(r_rows)
+
+def montar_tabelas_risco(linhas: list[dict], sens: list, stress: list, liq: list) -> dict[str, pd.DataFrame]:
+    risco = pd.DataFrame(linhas)
     return {
         "risco_diario": risco,
-        "sensibilidades": pd.DataFrame(s_rows, columns=["data", "fundo_cnpj", "fator", "delta", "gama"]),
-        "stress": pd.DataFrame(st_rows, columns=["data", "fundo_cnpj", "cenario", "pnl", "pnl_pct_pl"]),
-        "liquidez": pd.DataFrame(l_rows, columns=["data", "fundo_cnpj", "ticker", "valor_mercado", "dias_para_zerar", "bucket"]),
+        "sensibilidades": pd.DataFrame(sens, columns=["data", "fundo_cnpj", "fator", "delta", "gama"]),
+        "stress": pd.DataFrame(stress, columns=["data", "fundo_cnpj", "cenario", "pnl", "pnl_pct_pl"]),
+        "liquidez": pd.DataFrame(liq, columns=["data", "fundo_cnpj", "ticker", "valor_mercado", "dias_para_zerar", "bucket"]),
         "backtest_var": backtest_var(risco),
         "excecoes_var": excecoes_var(risco),
     }
+
+
+def calcular_risco(serie: dict[str, pd.DataFrame], tabelas: dict[str, pd.DataFrame], prec, painel: pd.DataFrame,
+                   volume: pd.DataFrame, calc: CalculadoraSens, janela: int = JANELA_HISTORICA,
+                   burn_in: int = BURN_IN_BACKTEST) -> dict[str, pd.DataFrame]:
+    """Tabelas risco_diario, sensibilidades, stress, backtest_var, liquidez para todos os fundos e datas
+    (versão em lote: percorre a série inteira com o mesmo `MotorRiscoDiario` do orquestrador)."""
+    pos = serie["posicoes_diarias"]
+    Q = {k: dict(zip(g["ticker"], g["quantidade"])) for k, g in pos.groupby(["data", "fundo_cnpj"])}
+    pl = serie["pl_diario"].set_index(["data", "fundo_cnpj"])
+    pl_liq = (serie["cota_diaria"].set_index(["data", "fundo_cnpj"])["pl_liquido"]
+              if "cota_diaria" in serie and len(serie["cota_diaria"]) else pl["pl"])
+    hip = pnl_hipotetico(serie, tabelas, prec)
+    motor = MotorRiscoDiario(prec, painel, volume, calc, janela, burn_in)
+    linhas, s_rows, st_rows, l_rows = [], [], [], []
+    for (data, c), row in pl.sort_index().iterrows():
+        h = hip.loc[(data, c)] if (data, c) in hip.index else None
+        r = motor.dia(prec.i_de[data], data, c, row["fundo"], Q.get((data, c), {}), float(pl_liq.loc[(data, c)]),
+                      float(row["caixa_projetado"]), None if h is None else h["pnl_hipotetico_limpo"],
+                      None if h is None else h["pnl_hipotetico"])
+        linhas.append(r["risco"])
+        s_rows += r["sens"]
+        st_rows += r["stress"]
+        l_rows += r["liq"]
+    return montar_tabelas_risco(linhas, s_rows, st_rows, l_rows)
 
 
 BASES_BACKTEST = (("LIMPO", "", "pnl_hipotetico_limpo"), ("SUJO", "_sujo", "pnl_hipotetico"))

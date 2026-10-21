@@ -28,6 +28,7 @@ class Ledger:
         self._hist: dict[tuple[str, str], tuple[list, list]] = {}  # (cnpj,ticker) -> (datas, qtd acumulada)
         self._caixa: dict[str, float] = {}
         self._vne: dict[tuple[str, str], float] = {}
+        self._por_liq: dict[str, dict[pd.Timestamp, float]] = {}  # fundo -> data de liquidação -> Σ caixa
 
     def __len__(self) -> int:
         return len(self._linhas)
@@ -42,6 +43,8 @@ class Ledger:
         self._linhas.append((len(self._linhas) + 1, data, fundo_cnpj, tipo, ticker, delta, preco, origem, liq))
         if tipo == "CAIXA":
             self._caixa[fundo_cnpj] = self._caixa.get(fundo_cnpj, 0.0) + delta
+            liqs = self._por_liq.setdefault(fundo_cnpj, {})
+            liqs[liq] = liqs.get(liq, 0.0) + delta
         elif tipo == "ATIVO":
             q = self._qtd.setdefault(fundo_cnpj, {})
             q[ticker] = q.get(ticker, 0) + int(delta)
@@ -58,6 +61,11 @@ class Ledger:
     def creditar(self, data, fundo_cnpj: str, ticker: str, valor: float, origem: str, data_liq=None) -> None:
         """Movimento de caixa avulso (evento, ajuste de futuro). `data_liq` default = `data` (D+0)."""
         self._lancar(data, fundo_cnpj, "CAIXA", ticker, valor, None, origem, data_liq)
+
+    def lancar_posicao(self, data, fundo_cnpj: str, ticker: str, quantidade: int, preco: float,
+                       origem: str = "SNAPSHOT") -> None:
+        """Posição inicial sem efeito de caixa (usada para reconstruir um estado a partir de um fechamento)."""
+        self._lancar(data, fundo_cnpj, "ATIVO", ticker, quantidade, preco, origem)
 
     def reduzir_vne(self, data, fundo_cnpj: str, ticker: str, fracao: float, origem: str) -> None:
         if not 0 < fracao <= 1:
@@ -84,15 +92,14 @@ class Ledger:
     caixa = caixa_projetado  # compatibilidade: o saldo "padrão" é o projetado
 
     def caixa_disponivel(self, fundo_cnpj: str, data) -> float:
-        """Caixa já liquidado até `data` (inclusive): projetado menos os lançamentos que liquidam depois."""
+        """Caixa já liquidado até `data` (inclusive): projetado menos o que só liquida depois."""
         data = pd.Timestamp(data)
-        a_liquidar = 0.0
-        for lin in reversed(self._linhas):
-            if lin[1] < data - _JANELA_PENDENTES:
-                break
-            if lin[2] == fundo_cnpj and lin[3] == "CAIXA" and lin[8] > data:
-                a_liquidar += lin[5]
+        a_liquidar = sum(v for d, v in self._por_liq.get(fundo_cnpj, {}).items() if d > data)
         return self.caixa_projetado(fundo_cnpj) - a_liquidar
+
+    def liquidado_em(self, fundo_cnpj: str, data) -> float:
+        """Caixa que liquida exatamente em `data`."""
+        return self._por_liq.get(fundo_cnpj, {}).get(pd.Timestamp(data), 0.0)
 
     def linhas_desde(self, n: int) -> list[tuple]:
         """Lançamentos de índice >= n (em ordem)."""

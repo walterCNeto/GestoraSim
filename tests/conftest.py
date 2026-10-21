@@ -23,3 +23,13 @@ def serie_curta(destino_serie):
 @pytest.fixture(scope="session")
 def risco_curto(serie_curta, destino_serie):
     return executar_risco(SEED, destino_serie, serie=serie_curta, janela=JANELA_CURTA)
+
+
+@pytest.fixture(scope="session")
+def ciclo_curto(tmp_path_factory):
+    """Ciclo completo (13 etapas) de 30 pregões: (orquestrador, tabelas, pasta)."""
+    from gestorasim.orquestrador import ConfigCiclo, Orquestrador
+
+    destino = tmp_path_factory.mktemp("ciclo_sessao")
+    orq = Orquestrador(ConfigCiclo(seed=SEED, destino=destino, janela_hist=15, burn_in=5, ckpt_cada=10))
+    return orq, orq.executar("2023-01-02", "2023-02-10"), destino

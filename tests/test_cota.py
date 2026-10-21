@@ -510,7 +510,7 @@ def test_caixa_excedente_e_reinvestido_nas_posicoes_existentes(prec, painel, tmp
     fia = por[ClasseFundo.FIA]
     mesa.ledger.creditar(mesa.data, fia.cnpj, "CAIXA", 30e6, "teste")  # entrada de recursos
     ordens = [o for o in ordens_gestao_caixa(mesa, alvo, _Seq()) if fia.cnpj in o.alvos]
-    assert len(ordens) > 5 and all(o.lado.value == "C" and o.origem == "GESTAO_CAIXA" for o in ordens)
+    assert len(ordens) > 5 and all(o.lado.value == "C" and o.origem == "REINVESTIMENTO" for o in ordens)
     held = set(mesa.ledger.quantidades(fia.cnpj))
     assert {o.ticker for o in ordens} <= held
     investido = sum(o.alvos[fia.cnpj] * float(mesa.precos[o.ticker]) for o in ordens)

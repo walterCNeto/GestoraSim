@@ -13,6 +13,10 @@ Convenções (todas parametrizáveis em `parametros.py`):
 - A provisão de performance (valor total) não é recalculada dentro do dia quando o número de cotas muda por fluxos,
   o que mantém PL líquido = cotas × cota líquida exatamente.
 - Come-cotas (RF/MM): último pregão de maio/novembro, por lote, cancelando cotas sem alterar a cota.
+
+Ciclo do dia (orquestrador): `abrir_dia` paga o que já é devido e conhecido (resgates convertidos antes e a taxa de
+administração do mês anterior) e `fechar_dia` converte aplicações/resgates com a cota do dia, apura taxas e tributos.
+Chamar só `fechar_dia` (uso antigo) faz as duas fases e devolve todos os fluxos do dia.
 """
 
 from __future__ import annotations
@@ -28,6 +32,8 @@ from gestorasim.dominio import Fundo
 
 COLUNAS_MOV = ["id_mov", "id_cotista", "fundo_cnpj", "tipo", "data_solicitacao", "valor_solicitado",
                "data_conversao", "data_pagamento"]
+COLUNAS_MOV_COMPLETAS = COLUNAS_MOV + ["cota_conversao", "cotas", "valor_bruto", "ir", "iof", "valor_liquido", "status"]
+_NAN = float("nan")
 
 
 def e_primeiro_du_do_mes(data: pd.Timestamp) -> bool:
@@ -66,11 +72,15 @@ class ResultadoDia:
 class PassivoFundo:
     def __init__(self, fundo: Fundo, regras: RegrasFundo, params: ParametrosPassivo, fluxos: pd.DataFrame) -> None:
         self.fundo, self.r, self.p = fundo, regras, params
-        self.mov = agendar(fluxos, regras, fundo.cnpj[7:10])
-        for c in ("cota_conversao", "cotas", "valor_bruto", "ir", "iof", "valor_liquido"):
-            self.mov[c] = float("nan")
-        self.mov["status"] = "AGENDADO"
-        self._por_conv = {d: g.index.tolist() for d, g in self.mov.groupby("data_conversao")}
+        agenda = agendar(fluxos, regras, fundo.cnpj[7:10])
+        self._mov: list[dict] = [
+            {**rec, "cota_conversao": _NAN, "cotas": _NAN, "valor_bruto": _NAN, "ir": _NAN, "iof": _NAN,
+             "valor_liquido": _NAN, "status": "AGENDADO"} for rec in agenda.to_dict("records")]
+        self._por_conv: dict[pd.Timestamp, list[int]] = {}
+        for k, m in enumerate(self._mov):
+            self._por_conv.setdefault(m["data_conversao"], []).append(k)
+        self._resg_ag = [k for k, m in enumerate(self._mov) if m["tipo"] == "RESGATE"]  # candidatos à agenda de saídas
+        self._id_idx = {m["id_mov"]: k for k, m in enumerate(self._mov)}
         self.lotes: dict[str, list[Lote]] = {}
         self.cotas = 0.0
         self.adm_saldo = 0.0
@@ -83,10 +93,22 @@ class PassivoFundo:
         self.prov_rows: list[dict] = []
         self.tributos: list[dict] = []
         self.ultima_cota = params.cota_inicial
+        self._aberto_em: pd.Timestamp | None = None
+        self._fluxos_abertura: list[tuple[float, str]] = []
+        self._adm_pago_abertura = 0.0
+
+    @property
+    def mov(self) -> pd.DataFrame:
+        return pd.DataFrame(self._mov, columns=COLUNAS_MOV_COMPLETAS)
 
     # ------------------------------------------------------------------ consultas
     def cotas_do_cotista(self, cotista: str) -> float:
         return sum(l.cotas for l in self.lotes.get(cotista, []))
+
+    @property
+    def passivos_total(self) -> float:
+        """Passivos do fundo na data (taxas a pagar, performance provisionada e resgates a pagar)."""
+        return self.adm_saldo + self.perf_saldo + sum(r["gross"] for r in self.resg_pend)
 
     def saidas_previstas(self, hoje: pd.Timestamp, datas: list[pd.Timestamp]) -> list[float]:
         """Saídas de caixa (negativas) esperadas nas `datas`: resgates convertidos a pagar, pedidos de resgate já
@@ -95,34 +117,58 @@ class PassivoFundo:
         for r in self.resg_pend:
             if r["pag"] in datas:
                 out[datas.index(r["pag"])] -= r["gross"]
-        pend = self.mov[(self.mov["tipo"] == "RESGATE") & (self.mov["status"] == "AGENDADO")
-                        & (self.mov["data_solicitacao"] <= hoje) & (self.mov["data_pagamento"].isin(datas))]
-        for r in pend.itertuples():
-            out[datas.index(r.data_pagamento)] -= r.valor_solicitado
+        for k in self._resg_ag:
+            m = self._mov[k]
+            if m["status"] == "AGENDADO" and m["data_solicitacao"] <= hoje and m["data_pagamento"] in datas:
+                out[datas.index(m["data_pagamento"])] -= m["valor_solicitado"]
         for k, d in enumerate(datas):
             if e_primeiro_du_do_mes(d):
                 out[k] -= self.adm_saldo
         return out
 
+    # ------------------------------------------------------------------ abertura: pagamentos já devidos
+    def abrir_dia(self, data: pd.Timestamp) -> list[tuple[float, str]]:
+        """Paga resgates já convertidos (com pagamento hoje) e a taxa de administração acumulada (1º pregão do
+        mês). Reduz os passivos e devolve os fluxos de caixa a lançar no ledger."""
+        data = pd.Timestamp(data)
+        self._aberto_em, self._fluxos_abertura, self._adm_pago_abertura = data, [], 0.0
+        if self.pl_liq_prev is None:  # primeiro dia: nada devido
+            return []
+        if e_primeiro_du_do_mes(data) and self.adm_saldo > 0:
+            self._adm_pago_abertura = self.adm_saldo
+            self._fluxos_abertura.append((-self.adm_saldo, "ADM"))
+            self.adm_saldo = 0.0
+        for r in [r for r in self.resg_pend if r["pag"] == data]:
+            self._fluxos_abertura.append((-r["gross"], "RESGATE"))
+            self._mov[self._id_idx[r["id"]]]["status"] = "PAGO"
+            self.resg_pend.remove(r)
+        return list(self._fluxos_abertura)
+
     # ------------------------------------------------------------------ fechamento do dia
-    def fechar_dia(self, data: pd.Timestamp, A: float, bench: float) -> ResultadoDia:
-        """`A` = PL dos ativos (caixa projetado + mercado) antes dos fluxos do passivo do dia."""
+    def fechar_dia(self, data: pd.Timestamp, A: float, bench: float, abertura_lancada: bool | None = None) -> ResultadoDia:
+        """`A` = PL dos ativos (caixa projetado + mercado). Se a abertura já foi lançada no ledger (orquestrador),
+        `A` já está líquido dos pagamentos de abertura; senão, `fechar_dia` faz a abertura e devolve todos os fluxos."""
         regras, p = self.r, self.p
         data = pd.Timestamp(data)
+        if abertura_lancada is None:
+            abertura_lancada = self._aberto_em == data
+        if not abertura_lancada:
+            self.abrir_dia(data)
+        abertura = sum(v for v, _ in self._fluxos_abertura)
         ini = self.pl_liq_prev is None
         primeiro_du, ultimo_du = (e_primeiro_du_do_mes(data), e_ultimo_du_do_mes(data))
+        A_pos = A if abertura_lancada else A + abertura  # PL dos ativos já líquido dos pagamentos de abertura
         if ini:
-            self.cotas = A / p.cota_inicial
-            self._novo_lote(p.cotista_capital_inicial, data, self.cotas, p.cota_inicial, A)
+            self.cotas = A_pos / p.cota_inicial
+            self._novo_lote(p.cotista_capital_inicial, data, self.cotas, p.cota_inicial, A_pos)
             self.la_base, self.idx_base = p.cota_inicial, bench
-            adm_dia, adm_antes, pnl_ativos = 0.0, 0.0, 0.0
+            adm_dia, pnl_ativos = 0.0, 0.0
         else:
             adm_dia = self.pl_liq_prev * ((1 + regras.taxa_adm) ** (1 / 252) - 1)
-            adm_antes = self.adm_saldo
             self.adm_saldo += adm_dia
-            pnl_ativos = A - self.A_prev
+            pnl_ativos = A_pos - self.A_prev - abertura  # a abertura (pagamentos) não é P&L
         resg_antes = sum(r["gross"] for r in self.resg_pend)
-        pl_pre = A - self.adm_saldo - resg_antes
+        pl_pre = A_pos - self.adm_saldo - resg_antes
         q_bruta = pl_pre / self.cotas
         linha = self.la_base * bench / self.idx_base
         perf_cota = regras.taxa_perf * max(0.0, q_bruta - linha)
@@ -134,7 +180,7 @@ class PassivoFundo:
         aplic = res_liq = ir_resg = cc_total = 0.0
 
         for k in self._por_conv.get(data, []):
-            m = self.mov.loc[k]
+            m = self._mov[k]
             if m["status"] != "AGENDADO" or m["data_solicitacao"] > data:
                 continue
             if m["tipo"] == "APLICACAO":
@@ -148,7 +194,7 @@ class PassivoFundo:
                 posse = self.cotas_do_cotista(m["id_cotista"])
                 a_resgatar = min(m["valor_solicitado"] / cota, posse)
                 if a_resgatar <= 1e-12:
-                    self.mov.loc[k, "status"] = "SEM_SALDO"
+                    m["status"] = "SEM_SALDO"
                     continue
                 partes, ir, iof = resgatar_fifo(self.lotes[m["id_cotista"]], a_resgatar, cota, data, regras.ir,
                                                 p.aliquota_fia, p.iof_ligado)
@@ -187,17 +233,12 @@ class PassivoFundo:
             self.la_base, self.idx_base = cota, bench  # high-water mark: nova linha d'água
         self.perf_saldo = perf_novo - perf_pago
 
-        adm_pago = adm_antes if (primeiro_du and not ini and adm_antes > 0) else 0.0
-        if adm_pago:
-            fluxos.append((-adm_pago, "ADM"))
-            self.adm_saldo -= adm_pago
-
-        for r in [r for r in self.resg_pend if r["pag"] == data]:
+        for r in [r for r in self.resg_pend if r["pag"] == data]:  # convertidos hoje e pagos hoje (RF)
             fluxos.append((-r["gross"], "RESGATE"))
-            self.mov.loc[self.mov["id_mov"] == r["id"], "status"] = "PAGO"
+            self._mov[self._id_idx[r["id"]]]["status"] = "PAGO"
             self.resg_pend.remove(r)
 
-        A_fecha = A + sum(v for v, _ in fluxos)
+        A_fecha = A_pos + sum(v for v, _ in fluxos)
         resg_pagar = sum(r["gross"] for r in self.resg_pend)
         pl_liq = A_fecha - self.adm_saldo - resg_pagar - self.perf_saldo
         variacao = 0.0 if ini else pl_liq - self.pl_liq_prev
@@ -214,13 +255,15 @@ class PassivoFundo:
             "taxas": taxas, "pnl_ativos": pnl_ativos, "variacao_pl_liquido": variacao,
             "erro_fechamento_pl": 0.0 if ini else variacao - esperado,
         }
-        prov = {"data": data, "fundo_cnpj": self.fundo.cnpj, "adm_dia": adm_dia, "adm_pago": adm_pago,
+        prov = {"data": data, "fundo_cnpj": self.fundo.cnpj, "adm_dia": adm_dia, "adm_pago": self._adm_pago_abertura,
                 "adm_a_pagar": self.adm_saldo, "perf_dia": despesa_perf, "perf_pago": perf_pago,
                 "perf_saldo": self.perf_saldo, "resgates_a_pagar": resg_pagar}
         self.cota_rows.append(cota_row)
         self.prov_rows.append(prov)
         self.tributos += tributos
-        return ResultadoDia(fluxos, cota_row, prov, tributos)
+        devolvidos = fluxos if abertura_lancada else list(self._fluxos_abertura) + fluxos
+        self._aberto_em = None
+        return ResultadoDia(devolvidos, cota_row, prov, tributos)
 
     # ------------------------------------------------------------------ internos
     def _novo_lote(self, cotista: str, data: pd.Timestamp, cotas: float, cota: float, capital: float) -> None:
@@ -229,9 +272,8 @@ class PassivoFundo:
             Lote(f"{self.fundo.cnpj[7:10]}-L{self._n_lote:05d}", cotista, data, cotas, cota, capital, cota))
 
     def _marcar(self, k: int, cota: float, cotas: float, bruto: float, ir: float, iof: float) -> None:
-        self.mov.loc[k, ["cota_conversao", "cotas", "valor_bruto", "ir", "iof", "valor_liquido"]] = [
-            cota, cotas, bruto, ir, iof, bruto - ir - iof]
-        self.mov.loc[k, "status"] = "CONVERTIDO"
+        self._mov[k].update(cota_conversao=cota, cotas=cotas, valor_bruto=bruto, ir=ir, iof=iof,
+                            valor_liquido=bruto - ir - iof, status="CONVERTIDO")
 
     def lotes_df(self, data: pd.Timestamp) -> pd.DataFrame:
         linhas = [(self.fundo.cnpj, l.id, l.cotista, l.data, l.cotas, l.cota_aplicacao, l.capital, l.cc_pago,

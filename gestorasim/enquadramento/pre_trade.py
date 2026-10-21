@@ -6,7 +6,7 @@ import pandas as pd
 
 from gestorasim.dominio import PRAZO_LIQUIDACAO_DU, ClasseAtivo, LimitesRegulamento
 from gestorasim.enquadramento.regras import (
-    EPS, VIOLADO, Carteira, ResultadoRegra, _res, montar_carteira, regra_caixa, todas_as_regras,
+    EPS, VIOLADO, Carteira, ResultadoRegra, _res, info_ativos, montar_carteira, regra_caixa, todas_as_regras,
 )
 
 DESENQUADRADO_PREEXISTENTE = "DESENQUADRADO_PREEXISTENTE"
@@ -36,8 +36,9 @@ def choque_ajuste_di(quantidades: dict[str, int], meta: pd.DataFrame, precos: pd
     """Perda de caixa de 1 desvio-padrão do ajuste diário dos futuros de DI: Σ |q| × PU × σ(retorno do PU)."""
     if not sigma_di:
         return 0.0
+    info = info_ativos(meta)
     return sum(abs(q) * float(precos[tk]) * sigma_di.get(tk, 0.0) for tk, q in quantidades.items()
-               if q and meta.loc[tk, "classe"] == ClasseAtivo.FUTURO_DI.value)
+               if q and info[tk][0] == ClasseAtivo.FUTURO_DI)
 
 
 def caixa_minimo_projetado(perfil: list[float], choque: float) -> float:
@@ -49,34 +50,44 @@ def regra_caixa_minimo(perfil: list[float], choque: float) -> ResultadoRegra:
     return _res("caixa_minimo_projetado", "D..D+2 c/ choque DI", caixa_minimo_projetado(perfil, choque), 0.0, "min")
 
 
+def calcular_pre(quantidades: dict[str, int], caixa: float, reg: LimitesRegulamento, meta: pd.DataFrame,
+                 precos: pd.Series, volume: pd.Series | None = None, perfil_caixa: list[float] | None = None,
+                 sigma_di: dict[str, float] | None = None) -> list[ResultadoRegra]:
+    """Regras da carteira antes da ordem (reaproveitável entre ordens enquanto o ledger não muda)."""
+    pre = todas_as_regras(montar_carteira(quantidades, caixa, meta, precos, volume), reg)
+    if perfil_caixa is not None:
+        pre.append(regra_caixa_minimo(perfil_caixa, choque_ajuste_di(quantidades, meta, precos, sigma_di)))
+    return pre
+
+
 def avaliar_pre_trade(quantidades: dict[str, int], caixa: float, reg: LimitesRegulamento,
                       meta: pd.DataFrame, precos: pd.Series, *, ticker: str, lado: str,
                       quantidade: int, volume: pd.Series | None = None,
                       perfil_caixa: list[float] | None = None,
-                      sigma_di: dict[str, float] | None = None) -> list[ResultadoRegra]:
+                      sigma_di: dict[str, float] | None = None,
+                      pre: list[ResultadoRegra] | None = None) -> list[ResultadoRegra]:
     """Resultados por regra da carteira pós-ordem.
 
     `volume` ativa a liquidez D+1 corrigida (ações limitadas a 20% do volume). `perfil_caixa` =
     saldos liquidados esperados em D, D+1, D+2 antes da ordem (liquidações pendentes incluídas);
     com ele, checa o caixa mínimo projetado com choque de 1 desvio-padrão do ajuste de DI.
+    `pre`: resultados já calculados da carteira antes da ordem (cache por estado do ledger).
 
     Uma regra só é VIOLADO se a ordem a viola e a agrava; desenquadramento já existente que a
     ordem não piora é reportado como DESENQUADRADO_PREEXISTENTE (não bloqueia).
     """
-    classe = meta.loc[ticker, "classe"]
-    cart_vazia = montar_carteira({}, 0.0, meta, precos).posicoes
-    pre = todas_as_regras(montar_carteira(quantidades, caixa, meta, precos, volume), reg)
+    classe = info_ativos(meta)[ticker][0]
+    if pre is None:
+        pre = calcular_pre(quantidades, caixa, reg, meta, precos, volume, perfil_caixa, sigma_di)
     args = dict(ticker=ticker, classe=classe, lado=lado, quantidade=quantidade, preco=float(precos[ticker]))
     q2, c2 = simular_ordem(quantidades, caixa, buffer=0.0, **args)  # PL e percentuais sem a reserva
     _, c_reservado = simular_ordem(quantidades, caixa, **args)  # caixa suficiente com reserva de slippage
-    depois = [r if r.regra != "caixa_suficiente" else regra_caixa(Carteira(c_reservado, cart_vazia))[0]
-              for r in todas_as_regras(montar_carteira(q2, c2, meta, precos, volume), reg)]
+    depois = todas_as_regras(montar_carteira(q2, c2, meta, precos, volume), reg)
+    depois = [r if r.regra != "caixa_suficiente" else regra_caixa(Carteira(c_reservado, []))[0] for r in depois]
     if perfil_caixa is not None:
-        _, c_res_q = simular_ordem(quantidades, 0.0, **args)  # efeito de caixa da ordem (com reserva)
-        efeito = c_res_q
-        k_liq = min(PRAZO_LIQUIDACAO_DU[ClasseAtivo(classe)], HORIZONTE_CAIXA_DU)
+        _, efeito = simular_ordem(quantidades, 0.0, **args)  # efeito de caixa da ordem (com reserva)
+        k_liq = min(PRAZO_LIQUIDACAO_DU[classe], HORIZONTE_CAIXA_DU)
         perfil_pos = [c + (efeito if k >= k_liq else 0.0) for k, c in enumerate(perfil_caixa)]
-        pre.append(regra_caixa_minimo(perfil_caixa, choque_ajuste_di(quantidades, meta, precos, sigma_di)))
         depois.append(regra_caixa_minimo(perfil_pos, choque_ajuste_di(q2, meta, precos, sigma_di)))
     antes = {(r.regra, r.detalhe): r for r in pre}
     saida = []

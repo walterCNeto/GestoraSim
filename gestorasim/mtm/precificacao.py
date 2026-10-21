@@ -162,7 +162,13 @@ class Precificador:
         self.i_de = {d: i for i, d in enumerate(self.datas)}
         self.ipca0 = float(tabelas["ipca"]["indice"].iloc[0])
         self._cdi_acum = tabelas["cdi"].set_index("data")["fator_acumulado"]
-        self._acoes = tabelas["precos_acoes"].pivot(index="data", columns="ticker", values="preco")
+        self._acoes = tabelas["precos_acoes"].pivot(index="data", columns="ticker", values="preco").loc[self.datas]
+        self._acoes_arr = self._acoes.to_numpy()
+        self._col_acao = {tk: j for j, tk in enumerate(self._acoes.columns)}
+        self._classe = {tk: ClasseAtivo(c) for tk, c in zip(self.meta.index, self.meta["classe"])}
+        self._indexador = {tk: i for tk, i in zip(self.meta.index, self.meta["indexador"])}
+        self._rating = {tk: (None if pd.isna(r) else r) for tk, r in zip(self.meta.index, self.meta["rating"])}
+        self._venc = {tk: (pd.Timestamp(v) if pd.notna(v) else None) for tk, v in zip(self.meta.index, self.meta["vencimento"])}
         self.fracoes = fracoes_amortizacao(tabelas["eventos"], self.meta, tabelas["ipca"])
         self.cupons_ntnb: dict[str, list] = {}
         self.deb: dict[str, DescDebenture] = {}
@@ -184,11 +190,10 @@ class Precificador:
 
     def preco_em_estado(self, ticker: str, data: pd.Timestamp, est: EstadoMercado) -> float:
         """Preço do ativo na `data` usando `est` (permite separar efeito de carrego e de mercado)."""
-        m = self.meta.loc[ticker]
-        classe = ClasseAtivo(m["classe"])
+        classe = self._classe[ticker]
         if classe == ClasseAtivo.ACAO:
-            return float(self._acoes.loc[data, ticker])
-        venc = pd.Timestamp(m["vencimento"])
+            return float(self._acoes_arr[self.i_de[data], self._col_acao[ticker]])
+        venc = self._venc[ticker]
         if classe == ClasseAtivo.FUTURO_DI:
             return pu_di(est, CAL.du(data, venc)) if data <= venc else float("nan")
         if classe == ClasseAtivo.DEBENTURE:
@@ -200,7 +205,7 @@ class Precificador:
     def fonte(self, ticker: str) -> str:
         if ticker.startswith("NTNB"):
             return FONTE_NTNB
-        return FONTES[ClasseAtivo(self.meta.loc[ticker, "classe"])]
+        return FONTES[self._classe[ticker]]
 
     def preco(self, ticker: str, i: int) -> float:
         return self.preco_em_estado(ticker, self.datas[i], self.estados[i])

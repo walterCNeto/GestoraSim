@@ -9,6 +9,7 @@ from gestorasim.boletagem.modelos import OrdemAgregada
 from gestorasim.dominio import ClasseAtivo, ClasseFundo, Fundo
 from gestorasim.enquadramento import lote, montar_carteira
 from gestorasim.posicao import Ledger
+from gestorasim.enquadramento.regras import classe_de
 
 TILT = 0.25  # amplitude do tilt da carteira-alvo em cada posição
 MIN_TRADE_PL = 0.0005  # ignora ajustes menores que 0,05% do PL
@@ -34,7 +35,7 @@ def _agrupar(deltas: list[tuple[str, str, int]], meta, data, novo_id, origem, us
     for cnpj, tk, d in deltas:
         blocos.setdefault((tk, "C" if d > 0 else "V"), {})[cnpj] = abs(d)
     return [
-        OrdemAgregada(id=novo_id(), data=data, ticker=tk, classe=ClasseAtivo(meta.loc[tk, "classe"]),
+        OrdemAgregada(id=novo_id(), data=data, ticker=tk, classe=ClasseAtivo(classe_de(meta, tk)),
                       lado=lado, alvos=alvos, origem=origem, usuario=usuario)
         for (tk, lado), alvos in sorted(blocos.items())
     ]
@@ -68,7 +69,7 @@ def ordens_aleatorias(ledger: Ledger, fundos: list[Fundo], meta, precos: pd.Seri
     ordens = []
     for _ in range(n):
         tk = tickers[rng.integers(len(tickers))]
-        classe = meta.loc[tk, "classe"]
+        classe = classe_de(meta, tk)
         lado = "C" if rng.random() < 0.6 else "V"
         escolhidos = rng.choice(len(fundos), size=int(rng.integers(1, 4)), replace=False)
         alvos = {}
@@ -98,14 +99,14 @@ def ordens_violadoras(ledger: Ledger, fundos: list[Fundo], meta, precos: pd.Seri
         return montar_carteira(ledger.quantidades(f.cnpj), ledger.caixa_projetado(f.cnpj), meta, precos).pl
 
     def qtd(f, tk, fracao):
-        return max(lote(meta.loc[tk, "classe"]), _qtd(fracao * pl(f), float(precos[tk]), meta.loc[tk, "classe"]))
+        return max(lote(classe_de(meta, tk)), _qtd(fracao * pl(f), float(precos[tk]), classe_de(meta, tk)))
 
     def ordem(f, tk, fracao, rotulo, **kw):
-        return OrdemAgregada(id=novo_id(), data=data, ticker=tk, classe=ClasseAtivo(meta.loc[tk, "classe"]),
+        return OrdemAgregada(id=novo_id(), data=data, ticker=tk, classe=ClasseAtivo(classe_de(meta, tk)),
                              lado="C", alvos={f.cnpj: int(qtd(f, tk, fracao))},
                              origem=f"VIOLADORA:{rotulo}", usuario="gestor.discricionario", **kw)
 
-    acoes_fia = [t for t in ledger.quantidades(fia.cnpj) if meta.loc[t, "classe"] == "ACAO"]
+    acoes_fia = [t for t in ledger.quantidades(fia.cnpj) if classe_de(meta, t) == "ACAO"]
     maior_acao = max(acoes_fia, key=lambda t: ledger.quantidades(fia.cnpj)[t] * float(precos[t]))
     di = meta.index[meta["classe"] == "FUTURO_DI"][0]
     ntnb = meta.index[meta.index.str.startswith("NTNB")][0]

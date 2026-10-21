@@ -14,6 +14,7 @@ from gestorasim.boletagem.rateio import ratear
 from gestorasim.dados import calendario
 from gestorasim.dominio import Fundo
 from gestorasim.enquadramento import avaliar_pre_trade, lote, violacoes
+from gestorasim.enquadramento.pre_trade import calcular_pre
 from gestorasim.posicao import Ledger, aplicar_execucao
 
 USUARIO_SISTEMA = "sistema.pretrade"
@@ -23,12 +24,15 @@ USUARIO_MESA = "mesa.execucao"
 class Mesa:
     def __init__(self, ledger: Ledger, fundos: list[Fundo], meta: pd.DataFrame, data,
                  precos: pd.Series, volume: pd.Series,
-                 sigma_di: dict[str, float] | None = None, agenda: dict[str, list[float]] | None = None) -> None:
+                 sigma_di: dict[str, float] | None = None, agenda: dict[str, list[float]] | None = None,
+                 passivos: dict[str, float] | None = None) -> None:
         self.ledger, self.meta, self.data = ledger, meta, pd.Timestamp(data)
         self.fundos = {f.cnpj: f for f in fundos}
         self.precos, self.volume, self.sigma_di = precos, volume, sigma_di
+        self.passivos = passivos or {}  # passivos do fundo (taxas, performance, resgates a pagar): PL líquido = PL − passivos
         self.agenda = agenda or {}  # saídas de caixa do passivo previstas em D, D+1, D+2 (negativas)
         self._datas_caixa = [calendario.somar_du(self.data, k) for k in range(3)]
+        self._cache_pre: dict[tuple, tuple[list, list]] = {}  # (fundo, nº de lançamentos) -> (perfil, regras antes)
         self.trilha = Trilha(datetime.combine(self.data.date(), datetime.min.time()).replace(hour=9))
         self.ordens: dict[str, OrdemAgregada] = {}
         self._pretrade: list[dict] = []
@@ -50,11 +54,16 @@ class Mesa:
         aprovados, excluidos, n_regras = {}, [], 0
         for cnpj, qtd in ordem.alvos.items():
             f = self.fundos[cnpj]
-            res = avaliar_pre_trade(self.ledger.quantidades(cnpj), self.ledger.caixa_projetado(cnpj),
-                                    f.regulamento, self.meta, self.precos, ticker=ordem.ticker,
+            q, caixa = self.ledger.quantidades(cnpj), self.ledger.caixa_projetado(cnpj)
+            chave = (cnpj, len(self.ledger))  # o ledger só cresce: mesmo tamanho = mesmo estado
+            if chave not in self._cache_pre:
+                perfil = self.perfil_caixa(cnpj)
+                self._cache_pre[chave] = (perfil, calcular_pre(q, caixa, f.regulamento, self.meta, self.precos,
+                                                               self.volume, perfil, self.sigma_di))
+            perfil, pre = self._cache_pre[chave]
+            res = avaliar_pre_trade(q, caixa, f.regulamento, self.meta, self.precos, ticker=ordem.ticker,
                                     lado=ordem.lado.value, quantidade=qtd, volume=self.volume,
-                                    perfil_caixa=self.perfil_caixa(cnpj),
-                                    sigma_di=self.sigma_di)
+                                    perfil_caixa=perfil, sigma_di=self.sigma_di, pre=pre)
             n_regras += len(res)
             for r in res:
                 self._pretrade.append({"ordem_id": ordem.id, "fundo_cnpj": cnpj, **r.asdict()})
@@ -148,6 +157,7 @@ class Mesa:
     def tabelas(self) -> dict[str, pd.DataFrame]:
         ordens = pd.DataFrame([{
             "ordem_id": o.id, "data": pd.Timestamp(o.data), "ticker": o.ticker, "classe": o.classe.value,
+            "fundos": ",".join(sorted(o.alvos_originais)),
             "lado": o.lado.value, "origem": o.origem, "n_fundos": len(o.alvos_originais),
             "n_fundos_excluidos": len(o.alvos_originais) - len(o.alvos),
             "quantidade_alvo_original": sum(o.alvos_originais.values()),

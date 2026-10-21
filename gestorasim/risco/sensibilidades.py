@@ -9,6 +9,7 @@ import pandas as pd
 
 from gestorasim.dominio import ClasseAtivo
 from gestorasim.mtm.curvas import VERTICES_RISCO, peso_vertice
+from gestorasim.enquadramento.regras import classe_de
 
 BUMP_BP = 1.0
 CENARIOS: dict[str, dict[str, float]] = {
@@ -44,14 +45,13 @@ def aplicar_cenario(est, c: dict[str, float]):
 
 def _sensivel(prec, ticker: str) -> tuple[str | None, str | None]:
     """(curva, rating) a que o ativo é sensível: curva em {"PRE", "REAL"}."""
-    m = prec.meta.loc[ticker]
-    classe = ClasseAtivo(m["classe"])
+    classe = prec._classe[ticker]
     if classe == ClasseAtivo.FUTURO_DI:
         return "PRE", None
     if classe == ClasseAtivo.TITULO_PUBLICO:
         return ("REAL" if ticker.startswith("NTNB") else "PRE"), None
     if classe == ClasseAtivo.DEBENTURE:
-        return ("REAL" if m["indexador"] == "IPCA" else "PRE"), m["rating"]
+        return ("REAL" if prec._indexador[ticker] == "IPCA" else "PRE"), prec._rating[ticker]
     return None, None
 
 
@@ -72,7 +72,7 @@ class CalculadoraSens:
             return self._unit[chave]
         delta, gama = np.zeros(self.n), np.zeros(self.n)
         curva, rating = _sensivel(self.prec, ticker)
-        if self.prec.meta.loc[ticker, "classe"] == ClasseAtivo.ACAO.value:
+        if classe_de(self.prec.meta, ticker) == ClasseAtivo.ACAO.value:
             delta[self.idx[f"ACAO:{ticker}"]] = float(self.painel[ticker].iloc[i])
         else:
             data, est = self.prec.datas[i], self.prec.estados[i]
@@ -107,7 +107,7 @@ class CalculadoraSens:
         if chave in self._stress:
             return self._stress[chave]
         data, est = self.prec.datas[i], self.prec.estados[i]
-        classe = self.prec.meta.loc[ticker, "classe"]
+        classe = classe_de(self.prec.meta, ticker)
         base = float(self.painel[ticker].iloc[i])
         out = {}
         for nome, c in CENARIOS.items():

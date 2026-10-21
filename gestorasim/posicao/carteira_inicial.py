@@ -9,6 +9,7 @@ from gestorasim.dominio import ClasseAtivo, ClasseFundo, Fundo
 from gestorasim.enquadramento import lote, montar_carteira, todas_as_regras
 from gestorasim.enquadramento.regras import VIOLADO
 from gestorasim.posicao.ledger import Ledger, aplicar_execucao
+from gestorasim.enquadramento.regras import classe_de
 
 PL_INICIAL = 100_000_000.0
 
@@ -64,10 +65,10 @@ def gerar_carteira_inicial(ledger: Ledger, fundos: list[Fundo], meta: pd.DataFra
         rng = np.random.default_rng([seed, 200 + k])
         ledger.integralizar(data, f.cnpj, pl)
         for tk, w in pesos_template(f.classe, meta, rng).items():
-            q = quantidade_para_valor(w * pl, float(precos[tk]), meta.loc[tk, "classe"])
+            q = quantidade_para_valor(w * pl, float(precos[tk]), classe_de(meta, tk))
             if q > 0:
                 aplicar_execucao(ledger, data=data, fundo_cnpj=f.cnpj, ticker=tk,
-                                 classe=meta.loc[tk, "classe"], lado="C", quantidade=q,
+                                 classe=classe_de(meta, tk), lado="C", quantidade=q,
                                  preco=float(precos[tk]), origem="CARTEIRA_INICIAL")
         cart = montar_carteira(ledger.quantidades(f.cnpj), ledger.caixa_projetado(f.cnpj), meta, precos)
         ruins = [r for r in todas_as_regras(cart, f.regulamento) if r.status == VIOLADO]

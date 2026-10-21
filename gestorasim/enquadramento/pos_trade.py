@@ -17,7 +17,7 @@ import pandas as pd
 
 from gestorasim.dominio import PRAZO_LIQUIDACAO_DU, ClasseAtivo, ClasseFundo
 from gestorasim.enquadramento.regras import (
-    OK, VIOLADO, ResultadoRegra, _res, montar_carteira, todas_as_regras,
+    OK, VIOLADO, ResultadoRegra, _res, classe_de, montar_carteira, todas_as_regras,
 )
 
 PRAZO_REENQUADRAMENTO_DU = 10
@@ -117,17 +117,120 @@ def ranquear_ordens(alocacoes: list[dict], regra: ResultadoRegra, avaliar_sem) -
     return texto, ranque[0][0], len(ranque)
 
 
+class PosTradeDiario:
+    """Enquadramento pós-trade pregão a pregão. Estado: episódios de desenquadramento abertos e já encerrados."""
+
+    def __init__(self, prec, painel: pd.DataFrame, volume: pd.DataFrame, fundos, calc, politica: dict | None = None,
+                 prazo_reenquadramento_du: int = PRAZO_REENQUADRAMENTO_DU, soft: float = LIMIAR_SOFT) -> None:
+        self.prec, self.painel, self.volume, self.calc = prec, painel, volume, calc
+        self.politica = politica or POLITICA_RISCO
+        self.prazo, self.soft = prazo_reenquadramento_du, soft
+        self.meta, self.fatores = prec.meta, calc.fatores
+        self.fundos = {f.cnpj: f for f in fundos}
+        self.abertos: dict[tuple, Episodio] = {}  # estado
+        self.todos: list[Episodio] = []  # estado
+
+    def dia(self, i: int, data: pd.Timestamp, c: str, caixa_projetado: float, caixa_disponivel: float,
+            q: dict[str, int], q_ant: dict[str, int], var_pct: float, stress_pct: float, passivos: float,
+            alocs: list[dict], caixa_trade: tuple[float, float]) -> tuple[list[dict], list[dict]]:
+        """`var_pct`/`stress_pct`: política de risco em fração do PL líquido; `passivos`: taxas, performance e
+        resgates a pagar (PL líquido = PL dos ativos − passivos); `alocs`: alocações do dia ao fundo;
+        `caixa_trade`: (caixa total das ordens do dia, parte que liquida no próprio dia)."""
+        f, meta, fatores, calc = self.fundos[c], self.meta, self.fatores, self.calc
+        row = {"caixa_projetado": caixa_projetado, "caixa_disponivel": caixa_disponivel}
+        Pv, vol = self.painel.iloc[i].dropna(), self.volume.iloc[i]
+        cart = montar_carteira(q, caixa_projetado, meta, Pv, vol, caixa_disponivel)
+        lim = self.politica[f.classe]
+        resultados = todas_as_regras(cart, f.regulamento) + regras_politica(var_pct, stress_pct, lim)
+        cf = None  # carteira sem as ordens do dia, calculada só se algum episódio começar hoje
+        violadas_hoje, linhas, alertas = set(), [], []
+        for r in resultados:
+            chave = (c, *chave_episodio(r.regra, r.detalhe))
+            ep = self.abertos.get(chave)
+            if r.status == VIOLADO:
+                violadas_hoje.add(chave)
+                if ep is None:
+                    classe, causa, principal, n_ord = "PASSIVO", "", "", 0
+                    if alocs and i > 0:
+                        if cf is None:
+                            cf = self._contrafactual(f, i, q_ant, caixa_trade, row, passivos, lim, Pv, vol)
+                        violou_sem_ordens = any(
+                            x.status == VIOLADO and chave_episodio(x.regra, x.detalhe) == chave[1:] for x in cf)
+                        classe = "PASSIVO" if violou_sem_ordens else "ATIVO"
+                        if classe == "ATIVO":
+                            causa, principal, n_ord = ranquear_ordens(
+                                alocs, r, lambda a: self._regras_sem_ordem(a, Pv, vol, q, row, f, lim, i, passivos))
+                    ep = Episodio(c, r.regra, r.detalhe, data, i, classe, causa, None, principal, n_ord)
+                    self.abertos[chave] = ep
+                    self.todos.append(ep)
+                ep.du_max = max(ep.du_max, i - ep.i_inicio)
+                ep.vencido = ep.classe == "PASSIVO" and ep.du_max > self.prazo
+            u = utilizacao(r)
+            nivel = nivel_alerta(r, self.soft)
+            ep = self.abertos.get(chave) if r.status == VIOLADO else None
+            linhas.append({
+                "data": data, "fundo_cnpj": c, "regra": r.regra, "detalhe": r.detalhe,
+                "valor": r.valor_pos_ordem, "limite": r.limite, "folga": r.folga, "status": r.status,
+                "utilizacao": u, "alerta": nivel,
+                "classificacao": ep.classe if ep else "", "inicio_episodio": ep.inicio if ep else pd.NaT,
+                "du_desde_inicio": (i - ep.i_inicio) if ep else 0,
+                "prazo_du": self.prazo if ep and ep.classe == "PASSIVO" else 0,
+                "vencido": bool(ep.vencido) if ep else False, "ordens_causa": ep.ordens_causa if ep else "",
+                "ordem_principal": ep.ordem_principal if ep else "", "n_ordens": ep.n_ordens if ep else 0,
+            })
+            if nivel:
+                alertas.append({"data": data, "fundo_cnpj": c, "regra": r.regra, "detalhe": r.detalhe,
+                                "nivel": nivel, "utilizacao": u, "valor": r.valor_pos_ordem, "limite": r.limite})
+        for chave in [k for k in self.abertos if k[0] == c and k not in violadas_hoje]:
+            self.abertos.pop(chave).fim = data  # reenquadrado
+        return linhas, alertas
+
+    def episodios(self) -> pd.DataFrame:
+        return pd.DataFrame([vars(e) for e in self.todos], columns=[f.name for f in fields(Episodio)])
+
+    def _contrafactual(self, f, i, q_ant, caixa_trade, row, passivos, lim, Pv, vol) -> list[ResultadoRegra]:
+        """Regras da carteira que existiria sem as ordens do dia: posições e caixa do fechamento anterior
+        + mercado e eventos de hoje."""
+        from gestorasim.risco.motor import metricas_politica
+
+        tot, liq0 = caixa_trade
+        cart = montar_carteira(q_ant, row["caixa_projetado"] - tot, self.meta, Pv, vol, row["caixa_disponivel"] - liq0)
+        m = metricas_politica(self.calc, self.fatores, q_ant, i, cart.pl - passivos)
+        return todas_as_regras(cart, f.regulamento) + regras_politica(m["var_pct"], m["stress_pct"], lim)
+
+    def _regras_sem_ordem(self, a: dict, Pv, vol, q, row, fundo, lim, i, passivos) -> list[ResultadoRegra]:
+        """Regras da carteira de fechamento retirando a alocação `a` (posição, caixa projetado e disponível)."""
+        from gestorasim.risco.motor import metricas_politica
+
+        meta = self.meta
+        sinal = 1 if a["lado"] == "C" else -1
+        q2 = dict(q)
+        q2[a["ticker"]] = q2.get(a["ticker"], 0) - sinal * a["quantidade"]
+        if q2[a["ticker"]] == 0:
+            del q2[a["ticker"]]
+        di = classe_de(meta, a["ticker"]) == "FUTURO_DI"
+        fluxo = 0.0 if di else -sinal * a["financeiro"]  # caixa que a ordem moveu
+        liq0 = PRAZO_LIQUIDACAO_DU[ClasseAtivo(classe_de(meta, a["ticker"]))] == 0
+        cart = montar_carteira(q2, row["caixa_projetado"] - fluxo, meta, Pv, vol,
+                               row["caixa_disponivel"] - (fluxo if liq0 else 0.0))
+        m = metricas_politica(self.calc, self.fatores, q2, i, cart.pl - passivos)
+        return todas_as_regras(cart, fundo.regulamento) + regras_politica(m["var_pct"], m["stress_pct"], lim)
+
+
 def rodar_pos_trade(serie: dict[str, pd.DataFrame], risco: pd.DataFrame, prec, painel: pd.DataFrame,
                     volume: pd.DataFrame, fundos, calc, politica: dict | None = None,
                     prazo_reenquadramento_du: int = PRAZO_REENQUADRAMENTO_DU,
                     soft: float = LIMIAR_SOFT) -> dict[str, pd.DataFrame]:
-    """Devolve enquadramento_diario (uma linha por regra/fundo/data), alertas e episodios."""
-    politica = politica or POLITICA_RISCO
-    meta, fatores = prec.meta, calc.fatores
-    por_cnpj = {f.cnpj: f for f in fundos}
+    """Devolve enquadramento_diario (uma linha por regra/fundo/data), alertas e episodios
+    (versão em lote: percorre a série com o mesmo `PosTradeDiario` do orquestrador)."""
     pos = serie["posicoes_diarias"]
     Q = {k: dict(zip(g["ticker"], g["quantidade"])) for k, g in pos.groupby(["data", "fundo_cnpj"])}
     pl = serie["pl_diario"].set_index(["data", "fundo_cnpj"])
+    cota = serie.get("cota_diaria")
+    passivos = {}
+    if cota is not None and len(cota):
+        passivos = (cota["adm_a_pagar"] + cota["perf_provisao"] + cota["resgates_a_pagar"]).groupby(
+            [cota["data"], cota["fundo_cnpj"]]).first().to_dict()
     led = serie["ledger"]
     cx = led[(led["tipo"] == "CAIXA") & led["origem"].str.match(_ORDEM)]
     cx = cx.assign(liq0=cx["delta"].where(cx["data_liquidacao"] <= cx["data"], 0.0))
@@ -135,99 +238,17 @@ def rodar_pos_trade(serie: dict[str, pd.DataFrame], risco: pd.DataFrame, prec, p
                     for k, r in cx.groupby(["data", "fundo_cnpj"])[["delta", "liq0"]].sum().iterrows()}
     ordens_dia = _ordens_do_dia(serie)
     risco_idx = risco.set_index(["data", "fundo_cnpj"])
-
-    abertos: dict[tuple, Episodio] = {}
-    todos: list[Episodio] = []
+    motor = PosTradeDiario(prec, painel, volume, fundos, calc, politica, prazo_reenquadramento_du, soft)
     linhas, alertas = [], []
     for (data, c), row in pl.sort_index().iterrows():
-        f, i = por_cnpj[c], prec.i_de[data]
-        q = Q.get((data, c), {})
-        Pv, vol = painel.iloc[i].dropna(), volume.iloc[i]
+        i = prec.i_de[data]
         rk = risco_idx.loc[(data, c)]
-        cart = montar_carteira(q, float(row["caixa_projetado"]), meta, Pv, vol, float(row["caixa_disponivel"]))
-        lim = politica[f.classe]
-        resultados = todas_as_regras(cart, f.regulamento) + regras_politica(
-            float(rk["var_param_pct"]), float(-rk["stress_pior_pct"]), lim)
-        cf = None  # carteira sem as ordens do dia, calculada só se algum episódio começar hoje
-        violadas_hoje = set()
-        for r in resultados:
-            chave = (c, *chave_episodio(r.regra, r.detalhe))
-            ep = abertos.get(chave)
-            if r.status == VIOLADO:
-                violadas_hoje.add(chave)
-                if ep is None:
-                    classe, causa, principal, n_ord = "PASSIVO", "", "", 0
-                    if (data, c) in ordens_dia and i > 0:
-                        if cf is None:
-                            cf = _contrafactual(serie, calc, fatores, meta, painel, volume, Q, pl, caixa_trades,
-                                                prec, f, c, data, i, row, lim)
-                        violou_sem_ordens = any(
-                            x.status == VIOLADO and chave_episodio(x.regra, x.detalhe) == chave[1:] for x in cf)
-                        classe = "PASSIVO" if violou_sem_ordens else "ATIVO"
-                        if classe == "ATIVO":
-                            causa, principal, n_ord = ranquear_ordens(
-                                ordens_dia[(data, c)], r,
-                                lambda a: _regras_sem_ordem(a, calc, fatores, meta, Pv, vol, q, row, f, lim, i))
-                    ep = Episodio(c, r.regra, r.detalhe, data, i, classe, causa, None, principal, n_ord)
-                    abertos[chave] = ep
-                    todos.append(ep)
-                du = i - ep.i_inicio
-                ep.du_max = max(ep.du_max, du)
-                ep.vencido = ep.classe == "PASSIVO" and ep.du_max > prazo_reenquadramento_du
-            u = utilizacao(r)
-            nivel = nivel_alerta(r, soft)
-            ep = abertos.get(chave) if r.status == VIOLADO else None
-            linhas.append({
-                "data": data, "fundo_cnpj": c, "regra": r.regra, "detalhe": r.detalhe,
-                "valor": r.valor_pos_ordem, "limite": r.limite, "folga": r.folga, "status": r.status,
-                "utilizacao": u, "alerta": nivel,
-                "classificacao": ep.classe if ep else "", "inicio_episodio": ep.inicio if ep else pd.NaT,
-                "du_desde_inicio": (i - ep.i_inicio) if ep else 0,
-                "prazo_du": prazo_reenquadramento_du if ep and ep.classe == "PASSIVO" else 0,
-                "vencido": bool(ep.vencido) if ep else False, "ordens_causa": ep.ordens_causa if ep else "",
-                "ordem_principal": ep.ordem_principal if ep else "", "n_ordens": ep.n_ordens if ep else 0,
-            })
-            if nivel:
-                alertas.append({"data": data, "fundo_cnpj": c, "regra": r.regra, "detalhe": r.detalhe,
-                                "nivel": nivel, "utilizacao": u, "valor": r.valor_pos_ordem, "limite": r.limite})
-        for chave in [k for k in abertos if k[0] == c and k not in violadas_hoje]:
-            abertos.pop(chave).fim = data  # reenquadrado
-
-    episodios = pd.DataFrame([vars(e) for e in todos], columns=[f.name for f in fields(Episodio)])
-    return {"enquadramento_diario": pd.DataFrame(linhas), "alertas": pd.DataFrame(alertas), "episodios": episodios}
-
-
-def _contrafactual(serie, calc, fatores, meta, painel, volume, Q, pl, caixa_trades, prec, f, c, data, i,
-                   row, lim) -> list[ResultadoRegra]:
-    """Regras da carteira que existiria sem as ordens do dia: posições e caixa do fechamento anterior
-    + mercado e eventos de hoje."""
-    from gestorasim.risco.motor import metricas_politica
-
-    ant = prec.datas[i - 1]
-    q_ant = Q.get((ant, c), {})
-    tot, liq0 = caixa_trades.get((data, c), (0.0, 0.0))
-    caixa_proj = float(row["caixa_projetado"]) - tot
-    caixa_disp = float(row["caixa_disponivel"]) - liq0
-    Pv, vol = painel.iloc[i].dropna(), volume.iloc[i]
-    cart = montar_carteira(q_ant, caixa_proj, meta, Pv, vol, caixa_disp)
-    res = todas_as_regras(cart, f.regulamento)
-    m = metricas_politica(calc, fatores, q_ant, i, cart.pl)
-    return res + regras_politica(m["var_pct"], m["stress_pct"], lim)
-
-
-def _regras_sem_ordem(a: dict, calc, fatores, meta, Pv, vol, q, row, fundo, lim, i) -> list[ResultadoRegra]:
-    """Regras da carteira de fechamento retirando a alocação `a` (posição, caixa projetado e disponível)."""
-    from gestorasim.risco.motor import metricas_politica
-
-    sinal = 1 if a["lado"] == "C" else -1
-    q2 = dict(q)
-    q2[a["ticker"]] = q2.get(a["ticker"], 0) - sinal * a["quantidade"]
-    if q2[a["ticker"]] == 0:
-        del q2[a["ticker"]]
-    di = meta.loc[a["ticker"], "classe"] == "FUTURO_DI"
-    fluxo = 0.0 if di else -sinal * a["financeiro"]  # caixa que a ordem moveu
-    liq0 = PRAZO_LIQUIDACAO_DU[ClasseAtivo(meta.loc[a["ticker"], "classe"])] == 0
-    cart = montar_carteira(q2, float(row["caixa_projetado"]) - fluxo, meta, Pv, vol,
-                           float(row["caixa_disponivel"]) - (fluxo if liq0 else 0.0))
-    m = metricas_politica(calc, fatores, q2, i, cart.pl)
-    return todas_as_regras(cart, fundo.regulamento) + regras_politica(m["var_pct"], m["stress_pct"], lim)
+        ant = prec.datas[i - 1] if i > 0 else None
+        l, a = motor.dia(i, data, c, float(row["caixa_projetado"]), float(row["caixa_disponivel"]),
+                         Q.get((data, c), {}), Q.get((ant, c), {}), float(rk["var_param_pct"]),
+                         float(-rk["stress_pior_pct"]), float(passivos.get((data, c), 0.0)),
+                         ordens_dia.get((data, c), []), caixa_trades.get((data, c), (0.0, 0.0)))
+        linhas += l
+        alertas += a
+    return {"enquadramento_diario": pd.DataFrame(linhas), "alertas": pd.DataFrame(alertas),
+            "episodios": motor.episodios()}
