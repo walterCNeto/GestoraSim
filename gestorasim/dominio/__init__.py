@@ -11,7 +11,6 @@ from gestorasim.dominio.modelos import (
     LimitesRegulamento,
     Ordem,
     Posicao,
-    StatusOrdem,
     TipoEvento,
     TipoPessoa,
     cnpj_valido,
@@ -20,6 +19,6 @@ from gestorasim.dominio.modelos import (
 
 __all__ = [
     "RATINGS", "Ativo", "ClasseAtivo", "ClasseFundo", "Cotista", "Evento", "Fundo",
-    "Indexador", "LadoOrdem", "LimitesRegulamento", "Ordem", "Posicao", "StatusOrdem",
+    "Indexador", "LadoOrdem", "LimitesRegulamento", "Ordem", "Posicao",
     "TipoEvento", "TipoPessoa", "cnpj_valido", "formatar_cnpj",
 ]

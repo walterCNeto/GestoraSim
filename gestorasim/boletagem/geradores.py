@@ -46,7 +46,7 @@ def ordens_rebalanceamento(ledger: Ledger, fundos: list[Fundo], meta, precos: pd
     deltas = []
     for f in fundos:
         q = ledger.quantidades(f.cnpj)
-        cart = montar_carteira(q, ledger.caixa(f.cnpj), meta, precos)
+        cart = montar_carteira(q, ledger.caixa_projetado(f.cnpj), meta, precos)
         pl = cart.pl
         for classe, grupo in cart.posicoes.groupby("classe"):
             expo = grupo["exposicao"]
@@ -74,7 +74,7 @@ def ordens_aleatorias(ledger: Ledger, fundos: list[Fundo], meta, precos: pd.Seri
         alvos = {}
         for i in escolhidos:
             f = fundos[i]
-            pl = montar_carteira(ledger.quantidades(f.cnpj), ledger.caixa(f.cnpj), meta, precos).pl
+            pl = montar_carteira(ledger.quantidades(f.cnpj), ledger.caixa_projetado(f.cnpj), meta, precos).pl
             q = max(lote(classe), _qtd(rng.uniform(0.005, 0.02) * pl, float(precos[tk]), classe))
             if lado == "V":
                 q = min(q, max(ledger.quantidades(f.cnpj).get(tk, 0), 0))
@@ -88,14 +88,14 @@ def ordens_aleatorias(ledger: Ledger, fundos: list[Fundo], meta, precos: pd.Seri
 
 
 def ordens_violadoras(ledger: Ledger, fundos: list[Fundo], meta, precos: pd.Series, data,
-                      novo_id) -> list[OrdemAgregada]:
+                      novo_id, com_override: bool = True) -> list[OrdemAgregada]:
     """Ordens que violam o regulamento de propósito (a de rating pede override, para demonstrá-lo)."""
     por_classe = {f.classe: f for f in fundos}
     fia, mm, rf = (por_classe[ClasseFundo.FIA], por_classe[ClasseFundo.MULTIMERCADO],
                    por_classe[ClasseFundo.RENDA_FIXA])
 
     def pl(f):
-        return montar_carteira(ledger.quantidades(f.cnpj), ledger.caixa(f.cnpj), meta, precos).pl
+        return montar_carteira(ledger.quantidades(f.cnpj), ledger.caixa_projetado(f.cnpj), meta, precos).pl
 
     def qtd(f, tk, fracao):
         return max(lote(meta.loc[tk, "classe"]), _qtd(fracao * pl(f), float(precos[tk]), meta.loc[tk, "classe"]))
@@ -105,8 +105,8 @@ def ordens_violadoras(ledger: Ledger, fundos: list[Fundo], meta, precos: pd.Seri
                              lado="C", alvos={f.cnpj: int(qtd(f, tk, fracao))},
                              origem=f"VIOLADORA:{rotulo}", usuario="gestor.discricionario", **kw)
 
-    maior_acao = max((t for t in ledger.quantidades(fia.cnpj) if meta.loc[t, "classe"] == "ACAO"),
-                     key=lambda t: ledger.quantidades(fia.cnpj)[t] * float(precos[t]))
+    acoes_fia = [t for t in ledger.quantidades(fia.cnpj) if meta.loc[t, "classe"] == "ACAO"]
+    maior_acao = max(acoes_fia, key=lambda t: ledger.quantidades(fia.cnpj)[t] * float(precos[t]))
     di = meta.index[meta["classe"] == "FUTURO_DI"][0]
     ntnb = meta.index[meta.index.str.startswith("NTNB")][0]
     return [
@@ -115,18 +115,20 @@ def ordens_violadoras(ledger: Ledger, fundos: list[Fundo], meta, precos: pd.Seri
         ordem(mm, di, 1.00, "alavancagem"),              # nocional de DI = 100% do PL
         ordem(mm, ntnb, 1.20, "caixa"),                  # compra acima do caixa
         ordem(rf, "EVAR15", 0.08, "rating",
-              pedido_override=("diretor.risco", "Excecao aprovada em comite de risco 2026-10")),
+              pedido_override=("diretor.risco", "Excecao aprovada em comite de risco 2026-10")
+              if com_override else None),
     ]
 
 
 def gerar_ordens_exemplo(ledger: Ledger, fundos: list[Fundo], meta, precos: pd.Series, data,
-                         seed: int, n_aleatorias: int = 6) -> list[OrdemAgregada]:
+                         seed: int, n_aleatorias: int = 6, com_override: bool = True,
+                         dia: int = 0) -> list[OrdemAgregada]:
     """Vendas primeiro (liberam caixa), depois compras; dentro de cada lado, ordem de criação."""
-    rng = np.random.default_rng([seed, 300])
+    rng = np.random.default_rng([seed, 300, dia])
     novo_id = _Seq()
     ordens = (ordens_rebalanceamento(ledger, fundos, meta, precos, data, rng, novo_id)
               + ordens_aleatorias(ledger, fundos, meta, precos, data, rng, novo_id, n_aleatorias)
-              + ordens_violadoras(ledger, fundos, meta, precos, data, novo_id))
+              + ordens_violadoras(ledger, fundos, meta, precos, data, novo_id, com_override))
     ordens = sorted(ordens, key=lambda o: (o.lado.value != "V", o.id))
     for i, o in enumerate(ordens, 1):  # ids sequenciais na ordem de processamento
         o.id = f"ORD{i:04d}"

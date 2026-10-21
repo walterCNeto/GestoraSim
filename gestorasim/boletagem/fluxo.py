@@ -41,26 +41,40 @@ class Mesa:
                                  f"em {len(ordem.alvos)} fundo(s); origem={ordem.origem}")
 
     def pre_trade(self, ordem: OrdemAgregada) -> bool:
-        """Avalia cada fundo; qualquer violação bloqueia a ordem inteira. Devolve True se liberada."""
-        viol, n_regras = [], 0
+        """Avalia cada fundo. Fundos que violam são excluídos (evento EXCLUIDO_PRE_TRADE) e os demais
+        seguem; a ordem só fica BLOQUEADA, com os alvos originais, se todos violarem."""
+        aprovados, excluidos, n_regras = {}, [], 0
         for cnpj, qtd in ordem.alvos.items():
             f = self.fundos[cnpj]
-            res = avaliar_pre_trade(self.ledger.quantidades(cnpj), self.ledger.caixa(cnpj),
+            res = avaliar_pre_trade(self.ledger.quantidades(cnpj), self.ledger.caixa_projetado(cnpj),
                                     f.regulamento, self.meta, self.precos, ticker=ordem.ticker,
                                     lado=ordem.lado.value, quantidade=qtd)
             n_regras += len(res)
             for r in res:
                 self._pretrade.append({"ordem_id": ordem.id, "fundo_cnpj": cnpj, **r.asdict()})
-            viol += [(f.nome, r) for r in violacoes(res)]
-        if not viol:
-            self.trilha.transicionar(ordem, E.PRE_TRADE_OK, USUARIO_SISTEMA,
-                                     f"{n_regras} regras avaliadas, 0 violações")
-            return True
-        resumo = "; ".join(f"{nome}: {r.regra}[{r.detalhe}] {r.valor_pos_ordem:.3f} vs {r.limite:.3f}"
-                           for nome, r in viol[:5])
-        self.trilha.transicionar(ordem, E.BLOQUEADA, USUARIO_SISTEMA,
-                                 f"{len(viol)} violação(ões): {resumo}")
-        return False
+            viol = violacoes(res)
+            if viol:
+                excluidos.append((cnpj, f.nome, viol))
+            else:
+                aprovados[cnpj] = qtd
+
+        def descrever(viol):
+            return ", ".join(f"{r.regra}[{r.detalhe}] {r.valor_pos_ordem:.3f} vs {r.limite:.3f}"
+                             for r in viol[:4])
+
+        if not aprovados:
+            resumo = "; ".join(f"{nome}: {descrever(v)}" for _, nome, v in excluidos[:3])
+            self.trilha.transicionar(ordem, E.BLOQUEADA, USUARIO_SISTEMA,
+                                     f"todos os {len(excluidos)} fundo(s) violam: {resumo}")
+            return False
+        for cnpj, nome, viol in excluidos:
+            self.trilha.evento(ordem, "EXCLUIDO_PRE_TRADE", USUARIO_SISTEMA,
+                               f"{nome} ({cnpj}) excluído, alvo {ordem.alvos[cnpj]}: {descrever(viol)}")
+        ordem.alvos = aprovados
+        self.trilha.transicionar(ordem, E.PRE_TRADE_OK, USUARIO_SISTEMA,
+                                 f"{n_regras} regras avaliadas; {len(aprovados)} fundo(s) liberado(s), "
+                                 f"{len(excluidos)} excluído(s)")
+        return True
 
     def liberar_override(self, ordem: OrdemAgregada, usuario: str, justificativa: str) -> None:
         self.trilha.transicionar(ordem, E.LIBERADA_OVERRIDE, usuario, justificativa)
@@ -86,7 +100,11 @@ class Mesa:
             f"participação={ordem.quantidade_executada / vol:.3f} do volume")
 
     def ratear(self, ordem: OrdemAgregada) -> None:
-        aloc, criterio = ratear(ordem.alvos, ordem.quantidade_executada, lote(ordem.classe))
+        aloc, criterio, cancelado = ratear(ordem.alvos, ordem.quantidade_executada, lote(ordem.classe))
+        if cancelado:
+            ordem.quantidade_cancelada = cancelado
+            self.trilha.evento(ordem, "CANCELAMENTO_EXCEDENTE", USUARIO_MESA,
+                               f"{cancelado} unidade(s) executadas além dos tetos por fundo; canceladas")
         for cnpj, q in aloc.items():
             self._alocacoes.append({
                 "ordem_id": ordem.id, "fundo_cnpj": cnpj, "ticker": ordem.ticker, "lado": ordem.lado.value,
@@ -96,7 +114,8 @@ class Mesa:
             if q > 0:
                 aplicar_execucao(self.ledger, data=self.data, fundo_cnpj=cnpj, ticker=ordem.ticker,
                                  classe=ordem.classe.value, lado=ordem.lado.value, quantidade=q,
-                                 preco=ordem.preco_medio, origem=ordem.id)
+                                 preco=ordem.preco_medio, origem=ordem.id,
+                                 preco_referencia=float(self.precos[ordem.ticker]))
         self.trilha.transicionar(ordem, E.ALOCADA, USUARIO_MESA,
                                  f"{criterio}; PM único={ordem.preco_medio:.3f}")
 
@@ -115,8 +134,10 @@ class Mesa:
     def tabelas(self) -> dict[str, pd.DataFrame]:
         ordens = pd.DataFrame([{
             "ordem_id": o.id, "data": pd.Timestamp(o.data), "ticker": o.ticker, "classe": o.classe.value,
-            "lado": o.lado.value, "origem": o.origem, "n_fundos": len(o.alvos),
-            "quantidade_alvo": o.quantidade_alvo_total, "quantidade_executada": o.quantidade_executada,
+            "lado": o.lado.value, "origem": o.origem, "n_fundos": len(o.alvos_originais),
+            "n_fundos_excluidos": len(o.alvos_originais) - len(o.alvos),
+            "quantidade_alvo_original": sum(o.alvos_originais.values()),
+            "quantidade_alvo": o.quantidade_alvo_total, "quantidade_cancelada": o.quantidade_cancelada, "quantidade_executada": o.quantidade_executada,
             "preco_medio": o.preco_medio, "estado": o.estado.value,
         } for o in self.ordens.values()])
         return {

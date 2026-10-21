@@ -46,12 +46,6 @@ class LadoOrdem(StrEnum):
     VENDA = "V"
 
 
-class StatusOrdem(StrEnum):
-    PENDENTE = "PENDENTE"
-    EXECUTADA = "EXECUTADA"
-    CANCELADA = "CANCELADA"
-
-
 class TipoEvento(StrEnum):
     DIVIDENDO = "DIVIDENDO"
     CUPOM = "CUPOM"
@@ -195,7 +189,6 @@ class Ordem(_Modelo):
     lado: LadoOrdem
     quantidade: float = Field(gt=0)
     preco: float = Field(gt=0)
-    status: StatusOrdem = StatusOrdem.PENDENTE
 
 
 class Posicao(_Modelo):

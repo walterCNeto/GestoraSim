@@ -71,21 +71,33 @@ def test_ledger_append_only_e_saldos():
 # ----------------------------------------------------------------------- rateio
 
 def test_rateio_proporcional_lote_e_residuo():
-    aloc, criterio = ratear({"A": 1000, "B": 3000, "C": 2000}, 3000, 100)
-    assert sum(aloc.values()) == 3000
-    assert aloc == {"A": 500, "B": 1500 + 0, "C": 1000}  # exato: 3000*1000/6000 = 500 etc.
-    assert "maior alvo (B)" in criterio and "lote=100" in criterio
-    aloc, _ = ratear({"A": 1000, "B": 3000, "C": 1300}, 5000, 100)
-    assert sum(aloc.values()) == 5000
+    aloc, criterio, cancelado = ratear({"A": 1000, "B": 3000, "C": 2000}, 3000, 100)
+    assert aloc == {"A": 500, "B": 1500, "C": 1000} and cancelado == 0
+    assert "maior resto" in criterio and "lote=100" in criterio and "cancelado=0" in criterio
+    aloc, _, cancelado = ratear({"A": 1000, "B": 3000, "C": 1300}, 5000, 100)
+    assert sum(aloc.values()) == 5000 and cancelado == 0
     assert all(q % 100 == 0 for q in aloc.values())
-    assert aloc["B"] == max(aloc.values())  # resíduo vai ao maior alvo
 
 
-def test_rateio_empate_vai_ao_primeiro_e_rejeita_excesso():
-    aloc, _ = ratear({"A": 100, "B": 100, "C": 100}, 200, 100)
-    assert aloc == {"A": 200, "B": 0, "C": 0}  # resíduo inteiro ao primeiro empatado
+def test_rateio_residuo_por_maior_resto_com_teto_no_alvo():
+    # executado 200 de alvos 100/100/100: restos iguais -> maior alvo, depois ordem: A e B, nunca C nem acima do alvo
+    aloc, _, cancelado = ratear({"A": 100, "B": 100, "C": 100}, 200, 100)
+    assert aloc == {"A": 100, "B": 100, "C": 0} and cancelado == 0
+    # restos distintos: 7*300/10=210 (resto 10), 7*700/10 = 490 (resto 90) -> sobra 1 lote para o 2º
+    aloc, _, _ = ratear({"A": 300, "B": 700}, 700, 100)
+    assert aloc == {"A": 200, "B": 500}
     with pytest.raises(ValueError):
         ratear({"A": 100}, 200, 100)
+
+
+def test_rateio_nunca_excede_alvo_e_cancela_excedente():
+    # alvos não múltiplos do lote: tetos 100+100 < 300 executados -> 100 cancelados
+    aloc, criterio, cancelado = ratear({"A": 150, "B": 150}, 300, 100)
+    assert aloc == {"A": 100, "B": 100} and cancelado == 100 and "cancelado=100" in criterio
+    for alvos, ex in [({"A": 1300, "B": 2700, "C": 400}, 4400), ({"A": 500, "B": 500, "C": 500}, 1000),
+                      ({"A": 100, "B": 900}, 700)]:
+        aloc, _, canc = ratear(alvos, ex, 100)
+        assert all(aloc[f] <= alvos[f] for f in alvos) and sum(aloc.values()) + canc == ex
 
 
 def test_soma_alocacoes_igual_executado_e_preco_unico(saidas):
@@ -222,14 +234,14 @@ def test_trilha_do_exemplo_so_tem_transicoes_validas(saidas):
     assert au["timestamp"].is_monotonic_increasing
     assert (au["usuario"].str.strip() != "").all() and (au["motivo"].str.strip() != "").all()
     for oid, g in au.groupby("ordem_id"):
+        g = g[g["tipo"] == "TRANSICAO"]  # eventos sem mudança de estado ficam fora da cadeia
         estados = [None] + g["para"].tolist()
-        assert g["de"].tolist() == [None if e is None else e for e in estados[:-1]] or \
-            g["de"].fillna("-").tolist() == ["-"] + estados[1:-1]
+        assert g["de"].fillna("-").tolist() == ["-"] + estados[1:-1]
         for de, para in zip(estados[:-1], estados[1:]):
             de = EstadoOrdem(de) if de else None
             assert EstadoOrdem(para) in TRANSICOES[de]
     o = saidas["ordens"].set_index("ordem_id")["estado"]
-    ultimo = au.groupby("ordem_id")["para"].last()
+    ultimo = au.groupby("ordem_id")["para"].last()  # eventos têm para = estado vigente
     assert (ultimo == o[ultimo.index]).all()
 
 
@@ -238,7 +250,7 @@ def test_criterio_de_rateio_na_trilha(saidas):
     aloc = au[au["para"] == "ALOCADA"]
     assert len(aloc) > 0
     assert aloc["motivo"].str.contains("proporcional ao alvo").all()
-    assert aloc["motivo"].str.contains("lote=").all() and aloc["motivo"].str.contains("maior alvo").all()
+    assert aloc["motivo"].str.contains("lote=").all() and aloc["motivo"].str.contains("maior resto").all()
 
 
 # ----------------------------------------------------------------------- execução
@@ -283,3 +295,39 @@ def test_parquets_gravados(saidas, tmp_path_factory):
     rodar_dia_exemplo(seed=SEED, destino=d)
     for nome in ("ordens", "execucoes", "alocacoes", "auditoria"):
         assert (d / f"{nome}.parquet").exists()
+
+
+# ----------------------------------------------------------------------- bloco 3: ajustes
+
+def test_nenhum_fundo_recebe_mais_que_o_alvo(saidas):
+    al = saidas["alocacoes"]
+    assert (al["quantidade_alocada"] <= al["quantidade_alvo"]).all()
+
+
+def test_fundo_violador_e_excluido_e_os_demais_seguem(amb):
+    mesa, por, meta, precos = amb
+    fia, mm = por[ClasseFundo.FIA], por[ClasseFundo.MULTIMERCADO]
+    o = mesa.processar(ordem("T7", "DLOG14", ClasseAtivo.DEBENTURE, "C", {fia.cnpj: 5000, mm.cnpj: 2000}))
+    assert o.estado == EstadoOrdem.ALOCADA
+    assert set(o.alvos) == {mm.cnpj} and set(o.alvos_originais) == {fia.cnpj, mm.cnpj}
+    au = mesa.tabelas()["auditoria"]
+    exc = au[au["tipo"] == "EXCLUIDO_PRE_TRADE"]
+    assert len(exc) == 1 and fia.cnpj in exc.iloc[0]["motivo"] and exc.iloc[0]["de"] == "CRIADA"
+    al = mesa.tabelas()["alocacoes"]
+    assert set(al["fundo_cnpj"]) == {mm.cnpj}
+    assert mesa.ledger.quantidades(fia.cnpj).get("DLOG14", 0) == 0
+
+
+def test_ordem_so_bloqueia_se_todos_os_fundos_violam(amb):
+    mesa, por, *_ = amb
+    fia, acoes = por[ClasseFundo.FIA], por[ClasseFundo.RENDA_FIXA]
+    o = mesa.processar(ordem("T8", "ALFA3", ClasseAtivo.ACAO, "C", {acoes.cnpj: 1000, fia.cnpj: 10**7}))
+    # RF não pode ter ações e o FIA estoura caixa/emissor: ninguém passa
+    assert o.estado == EstadoOrdem.BLOQUEADA
+    assert o.alvos == o.alvos_originais
+    assert (mesa.tabelas()["auditoria"]["tipo"] == "EXCLUIDO_PRE_TRADE").sum() == 0
+
+
+def test_dominio_sem_status_ordem_morto():
+    import gestorasim.dominio as d
+    assert not hasattr(d, "StatusOrdem")

@@ -8,6 +8,7 @@ MVP educacional de sistema de gestão de ativos. **Todos os dados são simulados
 pip install -e ".[dev]"
 python -m gestorasim.dados     # gera data/sim/*.parquet (seed=42) e imprime um resumo
 python -m gestorasim.boletagem # roda um dia de boletagem (ordens, pré-trade, execução, rateio)
+python -m gestorasim.mtm       # série de 504 pregões com MTM, eventos e P&L (~4 min)
 pytest
 ```
 
@@ -31,9 +32,8 @@ Convenções: nomes em português; números em relatórios e prints com 3 casas 
 ## Roadmap
 
 - **Bloco 1:** `dominio` + `dados`.
-- **Bloco 2 (atual):** `boletagem`, `enquadramento` (pré-trade) e `posicao` mínima — ciclo de vida da ordem com trilha de auditoria, ordem agregada, execução simulada, rateio. Saídas em `data/sim/` (`ordens`, `execucoes`, `alocacoes`, `auditoria`, `pretrade`, `ledger`).
-- **Bloco 2b (pendente):** processamento dos eventos (dividendos, cupons, amortização) na posição.
-- **Bloco 3:** `mtm` — marcação a mercado (ações, LTN/NTN-B, debêntures, DI) sobre a curva simulada.
+- **Bloco 2:** `boletagem`, `enquadramento` (pré-trade) e `posicao` mínima — ciclo de vida da ordem com trilha de auditoria, ordem agregada, execução simulada, rateio.
+- **Bloco 3 (atual):** `posicao` (ledger com liquidação D+2/D+0, eventos), `mtm` (ações, LTN, NTN-B, debêntures, DI), atribuição de P&L e série diária. Saídas em `data/sim/`: `posicoes_diarias`, `mtm_diario`, `pnl_atribuicao`, `pl_diario`.
 - **Bloco 4:** `risco` e `enquadramento` — VaR/volatilidade/DV01 e checagem dos limites do regulamento.
 - **Bloco 5:** `conciliacao` e `cota` — conciliação posição × custódia, cota, aplicações/resgates.
 - **Bloco 6:** `relatorios` e `app/` — relatórios e interface.

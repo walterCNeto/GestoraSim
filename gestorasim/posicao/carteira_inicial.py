@@ -69,7 +69,7 @@ def gerar_carteira_inicial(ledger: Ledger, fundos: list[Fundo], meta: pd.DataFra
                 aplicar_execucao(ledger, data=data, fundo_cnpj=f.cnpj, ticker=tk,
                                  classe=meta.loc[tk, "classe"], lado="C", quantidade=q,
                                  preco=float(precos[tk]), origem="CARTEIRA_INICIAL")
-        cart = montar_carteira(ledger.quantidades(f.cnpj), ledger.caixa(f.cnpj), meta, precos)
+        cart = montar_carteira(ledger.quantidades(f.cnpj), ledger.caixa_projetado(f.cnpj), meta, precos)
         ruins = [r for r in todas_as_regras(cart, f.regulamento) if r.status == VIOLADO]
         if ruins:
             raise RuntimeError(f"carteira inicial de {f.nome} viola o regulamento: {ruins}")

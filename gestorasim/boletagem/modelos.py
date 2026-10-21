@@ -46,12 +46,14 @@ class OrdemAgregada(BaseModel):
     ticker: str
     classe: ClasseAtivo
     lado: LadoOrdem
-    alvos: dict[str, int]
+    alvos: dict[str, int]  # vigentes; perdem os fundos excluídos no pré-trade
+    alvos_originais: dict[str, int] = Field(default_factory=dict)
     origem: str = "MANUAL"  # REBALANCEAMENTO | ALEATORIA | VIOLADORA | MANUAL
     usuario: str = "gestor"
     pedido_override: tuple[str, str] | None = None  # (usuário, justificativa), aplicado se bloqueada
     estado: EstadoOrdem | None = None  # só a Trilha altera
     quantidade_executada: int = 0
+    quantidade_cancelada: int = 0  # excedente de rateio que não coube nos tetos dos fundos
     preco_medio: float | None = None
     fills: list[tuple[int, float]] = Field(default_factory=list)  # (quantidade, preço)
 
@@ -59,6 +61,8 @@ class OrdemAgregada(BaseModel):
     def _alvos(self) -> OrdemAgregada:
         if not self.alvos or any(q <= 0 for q in self.alvos.values()):
             raise ValueError("a ordem agregada exige quantidades-alvo positivas por fundo")
+        if not self.alvos_originais:
+            self.alvos_originais = dict(self.alvos)
         return self
 
     @property

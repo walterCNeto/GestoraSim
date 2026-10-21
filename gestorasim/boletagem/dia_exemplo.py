@@ -44,7 +44,7 @@ def rodar_dia_exemplo(seed: int = 42, destino: Path | str | None = None,
 
     ordens = gerar_ordens_exemplo(ledger, fundos, meta, precos, dia, seed)
     mesa = Mesa(ledger, fundos, meta, dia, precos, volume)
-    pl_antes = {f.cnpj: montar_carteira(ledger.quantidades(f.cnpj), ledger.caixa(f.cnpj), meta, precos).pl
+    pl_antes = {f.cnpj: montar_carteira(ledger.quantidades(f.cnpj), ledger.caixa_projetado(f.cnpj), meta, precos).pl
                 for f in fundos}
     for o in ordens:
         mesa.processar(o)
@@ -52,8 +52,8 @@ def rodar_dia_exemplo(seed: int = 42, destino: Path | str | None = None,
     saidas["volume_diario"] = volume_df
     saidas["pl_fundos"] = pd.DataFrame([{
         "fundo": f.nome, "pl_antes": pl_antes[f.cnpj],
-        "pl_depois": montar_carteira(ledger.quantidades(f.cnpj), ledger.caixa(f.cnpj), meta, precos).pl,
-        "caixa_depois": ledger.caixa(f.cnpj)} for f in fundos])
+        "pl_depois": montar_carteira(ledger.quantidades(f.cnpj), ledger.caixa_projetado(f.cnpj), meta, precos).pl,
+        "caixa_depois": ledger.caixa_projetado(f.cnpj)} for f in fundos])
     for nome in TABELAS_SAIDA:
         saidas[nome].to_parquet(destino / f"{nome}.parquet", index=False)
     return saidas
