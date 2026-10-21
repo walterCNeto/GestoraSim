@@ -16,19 +16,22 @@ from gestorasim.risco.sensibilidades import CENARIOS, CalculadoraSens
 
 JANELA_HISTORICA = 252
 JANELA_BASILEIA = 250
+BURN_IN_BACKTEST = 60  # pregões iniciais da série fora do backtest (EWMA ainda aquecendo)
 CENARIOS_REAVALIACAO = tuple(CENARIOS)
 
 
-def pnl_hipotetico(serie: dict[str, pd.DataFrame], tabelas: dict[str, pd.DataFrame], prec) -> pd.Series:
-    """P&L do dia sobre a carteira do fechamento anterior (exclui trades, juros do caixa e custos).
+def pnl_hipotetico(serie: dict[str, pd.DataFrame], tabelas: dict[str, pd.DataFrame], prec) -> pd.DataFrame:
+    """P&L do dia sobre a carteira do fechamento anterior (sem trades, custos nem juros do caixa).
 
-    = preço + carrego + ajuste de futuros + eventos de renda fixa (mesmo dia do ex-cupom)
-      + dividendo por ação creditado na data ex (acumulado, não na data de pagamento).
+    - `pnl_hipotetico_limpo`: só o efeito dos fatores de mercado = efeito preço + ajuste de futuros
+      + dividendo por ação na data ex (devolve a queda de preço do ex, que não é movimento de fator).
+    - `pnl_hipotetico` (sujo): o limpo + carrego + eventos de renda fixa (cupom/amortização).
     """
     p = serie["pnl_atribuicao"].merge(prec.meta[["classe"]], left_on="ticker", right_index=True, how="left")
-    rf = p["classe"] != "ACAO"
-    p["hip"] = p["efeito_preco"] + p["carrego"] + p["ajuste_futuros"] + p["eventos"].where(rf & p["classe"].notna(), 0.0)
-    hip = p.groupby(["data", "fundo_cnpj"])["hip"].sum()
+    rf = p["classe"].notna() & (p["classe"] != "ACAO")
+    p["limpo"] = p["efeito_preco"] + p["ajuste_futuros"]
+    p["sujo"] = p["limpo"] + p["carrego"] + p["eventos"].where(rf, 0.0)
+    base = p.groupby(["data", "fundo_cnpj"])[["limpo", "sujo"]].sum()
     pos = serie["posicoes_diarias"]
     q = pos.set_index(["data", "fundo_cnpj", "ticker"])["quantidade"]
     acc = {}
@@ -42,7 +45,12 @@ def pnl_hipotetico(serie: dict[str, pd.DataFrame], tabelas: dict[str, pd.DataFra
     div = pd.Series(acc, dtype=float)
     if len(div):
         div.index = pd.MultiIndex.from_tuples(div.index, names=["data", "fundo_cnpj"])
-    return hip.add(div, fill_value=0.0).rename("pnl_hipotetico")
+    out = base.copy()
+    if len(div):
+        ajuste = div.reindex(out.index).fillna(0.0)
+        out["limpo"] += ajuste
+        out["sujo"] += ajuste
+    return out.rename(columns={"limpo": "pnl_hipotetico_limpo", "sujo": "pnl_hipotetico"})
 
 
 def metricas_politica(calc: CalculadoraSens, fatores, q: dict[str, int], i: int, pl: float) -> dict[str, float]:
@@ -57,13 +65,16 @@ def metricas_politica(calc: CalculadoraSens, fatores, q: dict[str, int], i: int,
 
 
 def calcular_risco(serie: dict[str, pd.DataFrame], tabelas: dict[str, pd.DataFrame], prec, painel: pd.DataFrame,
-                   volume: pd.DataFrame, calc: CalculadoraSens, janela: int = JANELA_HISTORICA) -> dict[str, pd.DataFrame]:
+                   volume: pd.DataFrame, calc: CalculadoraSens, janela: int = JANELA_HISTORICA,
+                   burn_in: int = BURN_IN_BACKTEST) -> dict[str, pd.DataFrame]:
     """Tabelas risco_diario, sensibilidades, stress, backtest_var, liquidez para todos os fundos e datas."""
     fatores = calc.fatores
     pos = serie["posicoes_diarias"]
     Q = {k: dict(zip(g["ticker"], g["quantidade"])) for k, g in pos.groupby(["data", "fundo_cnpj"])}
     pl = serie["pl_diario"].set_index(["data", "fundo_cnpj"])
     hip = pnl_hipotetico(serie, tabelas, prec)
+    primeira_data = pl.index.get_level_values(0).min()
+    i_primeira = prec.i_de[primeira_data]
     idx = fatores.idx
     pre_idx = [idx[f"PRE:{v}"] for v in VERTICES_RISCO]
     real_idx = [idx[f"REAL:{v}"] for v in VERTICES_RISCO]
@@ -106,9 +117,16 @@ def calcular_risco(serie: dict[str, pd.DataFrame], tabelas: dict[str, pd.DataFra
 
         dv01 = float(delta[pre_idx].sum() + delta[real_idx].sum())
         ant = anterior.get(c, {})
-        pnl_h = float(hip.get((data, c), 0.0)) if ant else np.nan
-        exc_p = bool(pnl_h < -ant["var_p"]) if ant and np.isfinite(ant["var_p"]) else None
-        exc_h = bool(pnl_h < -ant["var_h"]) if ant and np.isfinite(ant["var_h"]) else None
+        h = hip.loc[(data, c)] if (data, c) in hip.index else None
+        pnl_s = float(h["pnl_hipotetico"]) if ant and h is not None else np.nan
+        pnl_l = float(h["pnl_hipotetico_limpo"]) if ant and h is not None else np.nan
+        pode_p, pode_h = bool(ant) and np.isfinite(ant["var_p"]), bool(ant) and np.isfinite(ant["var_h"])
+        exc = {
+            "excecao_param": bool(pnl_l < -ant["var_p"]) if pode_p else None,
+            "excecao_hist": bool(pnl_l < -ant["var_h"]) if pode_h else None,
+            "excecao_param_sujo": bool(pnl_s < -ant["var_p"]) if pode_p else None,
+            "excecao_hist_sujo": bool(pnl_s < -ant["var_h"]) if pode_h else None,
+        }
         r_rows.append({
             "data": data, "fundo_cnpj": c, "fundo": row["fundo"], "pl": PL,
             "var_param_99": var_p, "var_param_pct": var_p / PL, "var_hist_99": var_h, "var_hist_pct": var_h / PL,
@@ -116,7 +134,9 @@ def calcular_risco(serie: dict[str, pd.DataFrame], tabelas: dict[str, pd.DataFra
             "stress_pior": min(min(stress.values()), 0.0),
             "stress_pior_pct": min(min(stress.values()), 0.0) / PL,
             "pior_dia_hist": pior_hist, "liquidez_d1": liquidez_d1(cart), "liquidez_d1_antes": liquidez_d1(cart_ant, corrigida=False),
-            **mat, "pnl_hipotetico": pnl_h, "excecao_param": exc_p, "excecao_hist": exc_h,
+            **mat, "pnl_hipotetico_limpo": pnl_l, "pnl_hipotetico": pnl_s, **exc,
+            "var_param_ant": ant.get("var_p", np.nan), "var_hist_ant": ant.get("var_h", np.nan),
+            "em_burn_in": (i - i_primeira) < burn_in,
         })
         anterior[c] = {"var_p": var_p, "var_h": var_h}
 
@@ -127,22 +147,48 @@ def calcular_risco(serie: dict[str, pd.DataFrame], tabelas: dict[str, pd.DataFra
         "stress": pd.DataFrame(st_rows, columns=["data", "fundo_cnpj", "cenario", "pnl", "pnl_pct_pl"]),
         "liquidez": pd.DataFrame(l_rows, columns=["data", "fundo_cnpj", "ticker", "valor_mercado", "dias_para_zerar", "bucket"]),
         "backtest_var": backtest_var(risco),
+        "excecoes_var": excecoes_var(risco),
     }
 
 
+BASES_BACKTEST = (("LIMPO", "", "pnl_hipotetico_limpo"), ("SUJO", "_sujo", "pnl_hipotetico"))
+METODOS_BACKTEST = (("PARAMETRICO", "param", "var_param_ant"), ("HISTORICO", "hist", "var_hist_ant"))
+
+
+def excecoes_var(risco: pd.DataFrame) -> pd.DataFrame:
+    """Uma linha por exceção (P&L hipotético < −VaR do dia anterior), com a marca de burn-in."""
+    linhas = []
+    for base, suf, col_pnl in BASES_BACKTEST:
+        for metodo, tag, col_var in METODOS_BACKTEST:
+            g = risco[risco[f"excecao_{tag}{suf}"].fillna(False).astype(bool)]
+            for _, r in g.iterrows():
+                linhas.append({"data": r["data"], "fundo_cnpj": r["fundo_cnpj"], "fundo": r["fundo"], "metodo": metodo,
+                               "base": base, "pnl": r[col_pnl], "var_dia_anterior": r[col_var],
+                               "em_burn_in": bool(r["em_burn_in"])})
+    return pd.DataFrame(linhas, columns=["data", "fundo_cnpj", "fundo", "metodo", "base", "pnl", "var_dia_anterior",
+                                         "em_burn_in"])
+
+
 def backtest_var(risco: pd.DataFrame, p: float = 0.01) -> pd.DataFrame:
-    """Exceções do VaR 99% (P&L hipotético < −VaR do dia anterior), Kupiec (todas as observações) e
-    zona de Basileia (últimas 250 observações) por fundo e método."""
+    """Exceções do VaR 99% por fundo, método e base de P&L (LIMPO: só fatores; SUJO: com carrego e eventos).
+
+    O burn-in (`em_burn_in`) fica fora de n_obs/excecoes; `excecoes_com_burn_in` mostra o que ele escondia.
+    Kupiec sobre todas as observações restantes; zona de Basileia sobre as últimas 250.
+    """
     linhas = []
     for c, g in risco.groupby("fundo_cnpj", sort=False):
-        for metodo, col in (("PARAMETRICO", "excecao_param"), ("HISTORICO", "excecao_hist")):
-            obs = g[col].dropna().astype(bool)
-            n, x = len(obs), int(obs.sum())
-            lr, pv = kupiec_pof(n, x, p)
-            ultimas = obs.iloc[-JANELA_BASILEIA:]
-            nz, xz = len(ultimas), int(ultimas.sum())
-            linhas.append({"fundo_cnpj": c, "fundo": g["fundo"].iloc[0], "metodo": metodo, "n_obs": n,
-                           "excecoes": x, "esperado": n * p, "taxa": x / n if n else np.nan, "kupiec_lr": lr,
-                           "kupiec_p": pv, "n_obs_basileia": nz, "excecoes_basileia": xz,
-                           "zona_basileia": zona_basileia(nz, xz, p) if nz else ""})
+        for base, suf, _ in BASES_BACKTEST:
+            for metodo, tag, _ in METODOS_BACKTEST:
+                col = f"excecao_{tag}{suf}"
+                todas = g[col].dropna().astype(bool)
+                obs = g.loc[~g["em_burn_in"].astype(bool), col].dropna().astype(bool)
+                n, x = len(obs), int(obs.sum())
+                lr, pv = kupiec_pof(n, x, p)
+                ultimas = obs.iloc[-JANELA_BASILEIA:]
+                nz, xz = len(ultimas), int(ultimas.sum())
+                linhas.append({"fundo_cnpj": c, "fundo": g["fundo"].iloc[0], "metodo": metodo, "base": base,
+                               "n_obs": n, "excecoes": x, "esperado": n * p, "taxa": x / n if n else np.nan,
+                               "kupiec_lr": lr, "kupiec_p": pv, "n_obs_basileia": nz, "excecoes_basileia": xz,
+                               "zona_basileia": zona_basileia(nz, xz, p) if nz else "",
+                               "n_obs_com_burn_in": len(todas), "excecoes_com_burn_in": int(todas.sum())})
     return pd.DataFrame(linhas)

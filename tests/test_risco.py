@@ -313,7 +313,7 @@ def test_liquidez_corrigida_nunca_maior_que_a_antiga(risco_curto):
 # ----------------------------------------------------------------------- pipeline de risco
 
 def test_tabelas_do_risco_e_parquets(risco_curto, destino_serie):
-    for nome in ("risco_diario", "sensibilidades", "stress", "backtest_var", "liquidez", "enquadramento_diario",
+    for nome in ("risco_diario", "sensibilidades", "stress", "backtest_var", "excecoes_var", "liquidez", "enquadramento_diario",
                  "alertas", "episodios"):
         assert nome in risco_curto
         assert (destino_serie / f"{nome}.parquet").exists()
@@ -350,22 +350,50 @@ def test_dv01_total_e_duration_por_fundo(risco_curto):
     assert (por.loc["Sim Ações FIA", "dur"]) < (por.loc["Sim Crédito Privado RF", "dur"])
 
 
-def test_backtest_var_exceções_kupiec_e_zona(risco_curto):
+def test_backtest_var_excecoes_kupiec_e_zona_limpo_e_sujo(risco_curto):
     bt, r = risco_curto["backtest_var"], risco_curto["risco_diario"]
-    assert len(bt) == 6 and set(bt["metodo"]) == {"PARAMETRICO", "HISTORICO"}
+    assert len(bt) == 12 and set(bt["metodo"]) == {"PARAMETRICO", "HISTORICO"} and set(bt["base"]) == {"LIMPO", "SUJO"}
     for _, b in bt.iterrows():
         g = r[r["fundo_cnpj"] == b["fundo_cnpj"]]
-        col = "excecao_param" if b["metodo"] == "PARAMETRICO" else "excecao_hist"
-        obs = g[col].dropna().astype(bool)
+        col = ("excecao_param" if b["metodo"] == "PARAMETRICO" else "excecao_hist") + ("" if b["base"] == "LIMPO" else "_sujo")
+        obs = g.loc[~g["em_burn_in"], col].dropna().astype(bool)  # burn-in fora do backtest
         assert b["n_obs"] == len(obs) and b["excecoes"] == int(obs.sum())
+        assert b["n_obs_com_burn_in"] == g[col].notna().sum() and b["excecoes_com_burn_in"] >= b["excecoes"]
         assert b["esperado"] == pytest.approx(0.01 * len(obs))
-        assert 0 <= b["kupiec_p"] <= 1 and b["zona_basileia"] in ("VERDE", "AMARELA", "VERMELHA")
-        assert b["zona_basileia"] == zona_basileia(b["n_obs_basileia"], b["excecoes_basileia"])
-    # a exceção é perda hipotética acima do VaR do dia anterior
+        assert 0 <= b["kupiec_p"] <= 1 and b["zona_basileia"] in ("VERDE", "AMARELA", "VERMELHA", "")
+    # a exceção é perda hipotética acima do VaR do dia anterior (limpo = coluna principal; sujo = comparação)
     g = r[r["fundo_cnpj"] == r["fundo_cnpj"].iloc[0]].reset_index(drop=True)
     for k in range(1, len(g)):
         if pd.notna(g.loc[k, "excecao_param"]):
-            assert bool(g.loc[k, "excecao_param"]) == (g.loc[k, "pnl_hipotetico"] < -g.loc[k - 1, "var_param_99"])
+            assert bool(g.loc[k, "excecao_param"]) == (g.loc[k, "pnl_hipotetico_limpo"] < -g.loc[k - 1, "var_param_99"])
+            assert bool(g.loc[k, "excecao_param_sujo"]) == (g.loc[k, "pnl_hipotetico"] < -g.loc[k - 1, "var_param_99"])
+
+
+def test_pnl_hipotetico_limpo_so_efeito_de_fatores(risco_curto, serie_curta):
+    r = risco_curto["risco_diario"].set_index(["data", "fundo_cnpj"])
+    pnl = serie_curta["pnl_atribuicao"].groupby(["data", "fundo_cnpj"])[
+        ["efeito_preco", "carrego", "eventos", "ajuste_futuros", "juros_caixa"]].sum()
+    k = [k for k in r.index if k in pnl.index and pd.notna(r.loc[k, "pnl_hipotetico_limpo"])]
+    assert len(k) > 100
+    dif = r.loc[k, "pnl_hipotetico"] - r.loc[k, "pnl_hipotetico_limpo"]  # sujo − limpo = carrego + eventos de RF
+    assert (dif - pnl.loc[k, "carrego"]).abs().max() < pnl.loc[k, "eventos"].abs().max() + 1e-6
+    # sem juros do caixa em nenhuma das duas bases
+    dias_sem_div = r.loc[k]
+    assert np.isfinite(dias_sem_div["pnl_hipotetico_limpo"]).all()
+
+
+def test_burn_in_e_marcado_e_fora_do_backtest(risco_curto):
+    r, ex = risco_curto["risco_diario"], risco_curto["excecoes_var"]
+    primeira = r["data"].min()
+    pregoes = sorted(r["data"].unique())
+    assert (r.loc[r["data"].isin(pregoes[:60]), "em_burn_in"]).all()
+    assert not r.loc[r["data"].isin(pregoes[60:]), "em_burn_in"].any()
+    assert set(ex.columns) >= {"data", "fundo_cnpj", "metodo", "base", "pnl", "var_dia_anterior", "em_burn_in"}
+    assert (ex["pnl"] < -ex["var_dia_anterior"]).all() and ex["data"].min() > primeira
+    bt = risco_curto["backtest_var"]
+    for _, b in bt.iterrows():  # as exceções dentro do burn-in explicam a diferença com/sem burn-in
+        n = len(ex[(ex["fundo_cnpj"] == b["fundo_cnpj"]) & (ex["metodo"] == b["metodo"]) & (ex["base"] == b["base"])])
+        assert n == b["excecoes_com_burn_in"]
 
 
 def test_pnl_hipotetico_bate_com_variacao_do_pl_sem_trades(risco_curto, serie_curta):
@@ -440,7 +468,9 @@ def _serie_mini(u, prec, painel, n_dias, trades):
         for fi, tk, lado, qtd, origem in trades.get(i, []):
             aplicar_execucao(led, data=data, fundo_cnpj=fundos[fi].cnpj, ticker=tk, classe=meta.loc[tk, "classe"],
                              lado=lado, quantidade=qtd, preco=float(painel.at[data, tk]), origem=origem)
-            aloc.append({"ordem_id": origem, "fundo_cnpj": fundos[fi].cnpj, "quantidade_alocada": qtd, "data_serie": data})
+            aloc.append({"ordem_id": origem, "fundo_cnpj": fundos[fi].cnpj, "ticker": tk, "lado": lado,
+                         "quantidade_alocada": qtd, "financeiro": qtd * float(painel.at[data, tk]),
+                         "data_serie": data})
             aud.append({"ordem_id": origem, "para": "LIBERADA_OVERRIDE", "data_serie": data})
         for f in fundos:
             q = led.quantidades(f.cnpj)
@@ -528,3 +558,35 @@ def test_cache_do_painel_em_memoria_e_em_disco(u, tmp_path):
     assert cache.impressao_digital(u, SEED) != cache.impressao_digital(u, SEED + 1)
     alterado = {**u, "cdi": u["cdi"].assign(cdi_aa=u["cdi"]["cdi_aa"] + 1e-4)}
     assert cache.impressao_digital(alterado, SEED) != cache.impressao_digital(u, SEED)
+
+
+# ----------------------------------------------------------------------- ranking das ordens por contribuição
+
+def test_ordens_causa_ranqueadas_pela_contribuicao_a_metrica(u, prec, painel, calc):
+    vol = gerar_volume(prec.meta, prec.datas, SEED).pivot(index="data", columns="ticker", values="volume")
+    q_grande = int(0.05 * 100e6 // painel.at[prec.datas[1], "DLOG14"])
+    q_pequena = int(0.01 * 100e6 // painel.at[prec.datas[1], "DLOG14"])
+    # a ordem pequena é criada primeiro (id menor); a grande contribui mais e deve liderar
+    serie, risco, fundos = _serie_mini(u, prec, painel, 4, {1: [(0, "DLOG14", "C", q_pequena, "ORD0003"),
+                                                                (0, "DLOG14", "C", q_grande, "ORD0009")]})
+    ep = rodar_pos_trade(serie, risco, prec, painel, vol, fundos, calc)["episodios"]
+    e = ep[(ep["regra"] == "limite_classe") & (ep["detalhe"] == "DEBENTURE") & (ep["classe"] == "ATIVO")].iloc[0]
+    assert e["ordem_principal"] == "ORD0009" and e["n_ordens"] == 2
+    ranque = e["ordens_causa"].split(",")
+    assert ranque[0].startswith("ORD0009") and ranque[1].startswith("ORD0003")
+    contrib = [float(x.split("(")[-1].rstrip(")")) for x in ranque]
+    assert contrib[0] > contrib[1] > 0
+    assert contrib[0] == pytest.approx(0.05, abs=0.002) and contrib[1] == pytest.approx(0.01, abs=0.002)  # frações do PL
+
+
+def test_ranquear_ordens_unitario():
+    from gestorasim.enquadramento.pos_trade import ranquear_ordens
+    regra = ResultadoRegra("limite_classe", "ACAO", 0.50, 0.40, -0.10, "VIOLADO", "max")
+    sem = {"A": 0.48, "B": 0.40, "C": 0.50}  # valor da regra retirando cada ordem
+    alocs = [{"ordem_id": o, "ticker": o, "lado": "C", "quantidade": 1, "financeiro": 1.0, "override": o == "B"} for o in sem]
+    texto, principal, n = ranquear_ordens(alocs, regra, lambda a: [ResultadoRegra("limite_classe", "ACAO", sem[a["ordem_id"]], 0.4, 0, "OK")])
+    assert principal == "B" and n == 3
+    assert texto.split(",")[0].startswith("B(OVERRIDE)") and texto.split(",")[-1].startswith("C(+0.0000")
+    minimo = ResultadoRegra("minimo_classe", "ACAO", 0.50, 0.67, -0.17, "VIOLADO", "min")
+    t2, p2, _ = ranquear_ordens(alocs[:1], minimo, lambda a: [ResultadoRegra("minimo_classe", "ACAO", 0.55, 0.67, 0, "OK", "min")])
+    assert p2 == "A" and "(+0.0500)" in t2  # em regras de mínimo, tirar a ordem melhora => ela piorou 5 pontos

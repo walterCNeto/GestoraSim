@@ -274,10 +274,12 @@ def test_fechamento_da_atribuicao_de_pnl(serie):
     pnl = serie["pnl_atribuicao"]
     por_dia = pnl.groupby(["data", "fundo_cnpj"])["total"].sum()
     ref = pl.set_index(["data", "fundo_cnpj"])
-    assert (por_dia - ref.loc[por_dia.index, "variacao_pl"]).abs().max() < TOL
-    # soma por fundo de toda a série = PL final − PL inicial (cotistas = 0)
+    # a variação do PL dos ativos = P&L + fluxos de caixa do passivo (aplicações, pagamentos, taxas, tributos)
+    assert (por_dia - (ref.loc[por_dia.index, "variacao_pl"] - ref.loc[por_dia.index, "fluxo_passivo"])).abs().max() < TOL
+    # soma por fundo de toda a série = PL final − PL inicial − fluxos do passivo
     for c, g in pl.groupby("fundo_cnpj"):
-        assert pnl[pnl.fundo_cnpj == c]["total"].sum() == pytest.approx(g["pl"].iloc[-1] - g["pl"].iloc[0], abs=TOL)
+        fluxos = g["fluxo_passivo"].iloc[1:].sum()
+        assert pnl[pnl.fundo_cnpj == c]["total"].sum() == pytest.approx(g["pl"].iloc[-1] - g["pl"].iloc[0] - fluxos, abs=TOL)
 
 
 def test_atribuicao_tem_todas_as_componentes(serie, u):

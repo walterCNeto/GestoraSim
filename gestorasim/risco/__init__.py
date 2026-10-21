@@ -14,18 +14,18 @@ from gestorasim.enquadramento.pos_trade import (
 )
 from gestorasim.mtm import Precificador, carregar_serie, painel_oficial, rodar_serie
 from gestorasim.risco.fatores import construir_fatores
-from gestorasim.risco.motor import JANELA_HISTORICA, calcular_risco
+from gestorasim.risco.motor import BURN_IN_BACKTEST, JANELA_HISTORICA, calcular_risco
 from gestorasim.risco.sensibilidades import CalculadoraSens
 from gestorasim.util import fmt3
 
-TABELAS_RISCO = ("risco_diario", "sensibilidades", "stress", "backtest_var", "liquidez",
+TABELAS_RISCO = ("risco_diario", "sensibilidades", "stress", "backtest_var", "excecoes_var", "liquidez",
                  "enquadramento_diario", "alertas")
 
 
 def executar_risco(seed: int = 42, destino: Path | str | None = None,
                    serie: dict[str, pd.DataFrame] | None = None, janela: int = JANELA_HISTORICA,
                    politica: dict | None = None, prazo_reenquadramento_du: int = PRAZO_REENQUADRAMENTO_DU,
-                   escrever: bool = True) -> dict[str, pd.DataFrame]:
+                   burn_in: int = BURN_IN_BACKTEST, escrever: bool = True) -> dict[str, pd.DataFrame]:
     """Calcula risco e pós-trade. Usa a série em disco se ela bate com o universo (senão a executa)."""
     destino = Path(destino) if destino is not None else DESTINO_PADRAO
     tabelas = gerar_universo(seed=seed, destino=destino)
@@ -37,7 +37,7 @@ def executar_risco(seed: int = 42, destino: Path | str | None = None,
     volume = gerar_volume(prec.meta, prec.datas, seed).pivot(index="data", columns="ticker", values="volume")
     fatores = construir_fatores(tabelas, prec, painel)
     calc = CalculadoraSens(prec, fatores, painel)
-    res = calcular_risco(serie, tabelas, prec, painel, volume, calc, janela)
+    res = calcular_risco(serie, tabelas, prec, painel, volume, calc, janela, burn_in)
     pt = rodar_pos_trade(serie, res["risco_diario"], prec, painel, volume, fundos, calc, politica,
                          prazo_reenquadramento_du)
     saidas = {**res, **pt}
@@ -59,8 +59,17 @@ def resumo(res: dict[str, pd.DataFrame]) -> str:
             linhas.append(f"  VaR 99% histórico   (% PL, médio/máx): {f(g['var_hist_pct'].dropna())}")
             linhas.append(f"  ES 97,5% histórico  (% PL, médio/máx): {f(g['es_hist_pct'].dropna())}")
         for _, b in bt[bt["fundo_cnpj"] == c].iterrows():
-            linhas.append(f"  backtest {b['metodo']:<11}: {b['excecoes']}/{b['n_obs']} exceções "
-                          f"(esperado {fmt3(b['esperado'])}), Kupiec p={fmt3(b['kupiec_p'])}, zona {b['zona_basileia']}")
+            extra = (f" [com burn-in: {b['excecoes_com_burn_in']}/{b['n_obs_com_burn_in']}]"
+                     if b["excecoes_com_burn_in"] != b["excecoes"] else "")
+            linhas.append(f"  backtest {b['metodo']:<11} {b['base']:<6}: {b['excecoes']}/{b['n_obs']} exceções "
+                          f"(esperado {fmt3(b['esperado'])}), Kupiec p={fmt3(b['kupiec_p'])}, zona {b['zona_basileia']}{extra}")
+        ex = res["excecoes_var"]
+        ex = ex[(ex["fundo_cnpj"] == c) & (ex["metodo"] == "PARAMETRICO") & (ex["base"] == "LIMPO")] if len(ex) else ex
+        if nome.endswith("FIA") and len(ex):
+            antes = ex[ex["em_burn_in"]]["data"].dt.strftime("%Y-%m-%d").tolist()
+            depois = ex[~ex["em_burn_in"]]["data"].dt.strftime("%Y-%m-%d").tolist()
+            linhas.append(f"  exceções do FIA (paramétrico, limpo) dentro do burn-in: {len(antes)} {antes}; "
+                          f"depois: {len(depois)} {depois}")
         s = st[(st["fundo_cnpj"] == c) & (st["cenario"] != "PIOR_DIA_HIST")]
         pior = s.loc[s["pnl_pct_pl"].idxmin()]
         linhas.append(f"  pior stress: {pior['cenario']} {fmt3(pior['pnl_pct_pl'])} do PL em {pior['data']:%Y-%m-%d}")

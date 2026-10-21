@@ -10,12 +10,12 @@ Classificação dos desenquadramentos (por episódio, na data em que começam):
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 import numpy as np
 import pandas as pd
 
-from gestorasim.dominio import ClasseFundo
+from gestorasim.dominio import PRAZO_LIQUIDACAO_DU, ClasseAtivo, ClasseFundo
 from gestorasim.enquadramento.regras import (
     OK, VIOLADO, ResultadoRegra, _res, montar_carteira, todas_as_regras,
 )
@@ -72,21 +72,49 @@ class Episodio:
     classe: str  # ATIVO | PASSIVO
     ordens_causa: str
     fim: pd.Timestamp | None = None
+    ordem_principal: str = ""
+    n_ordens: int = 0
     du_max: int = 0
     vencido: bool = False
 
 
-def _ordens_do_dia(serie: dict[str, pd.DataFrame]) -> dict[tuple[pd.Timestamp, str], str]:
-    """(data, fundo) -> ordens executadas no dia que alocaram ao fundo, marcando as liberadas por override."""
+def _ordens_do_dia(serie: dict[str, pd.DataFrame]) -> dict[tuple[pd.Timestamp, str], list[dict]]:
+    """(data, fundo) -> alocações executadas no dia (ordem, ativo, lado, quantidade, financeiro, override)."""
     al, au = serie["alocacoes_serie"], serie["auditoria_serie"]
     if al.empty:
         return {}
     ov = set(map(tuple, au.loc[au["para"] == "LIBERADA_OVERRIDE", ["data_serie", "ordem_id"]].to_numpy()))
-    out: dict[tuple, list[str]] = {}
+    out: dict[tuple, list[dict]] = {}
     for _, a in al[al["quantidade_alocada"] > 0].iterrows():
-        marca = "(OVERRIDE)" if (a["data_serie"], a["ordem_id"]) in ov else ""
-        out.setdefault((a["data_serie"], a["fundo_cnpj"]), []).append(a["ordem_id"] + marca)
-    return {k: ",".join(sorted(set(v))) for k, v in out.items()}
+        out.setdefault((a["data_serie"], a["fundo_cnpj"]), []).append({
+            "ordem_id": a["ordem_id"], "ticker": a["ticker"], "lado": a["lado"], "quantidade": int(a["quantidade_alocada"]),
+            "financeiro": float(a["financeiro"]), "override": (a["data_serie"], a["ordem_id"]) in ov})
+    return out
+
+
+def _valor_da_regra(resultados: list[ResultadoRegra], chave: tuple[str, str]) -> tuple[float, str] | None:
+    for x in resultados:
+        if chave_episodio(x.regra, x.detalhe) == chave:
+            return x.valor_pos_ordem, x.sentido
+    return None
+
+
+def ranquear_ordens(alocacoes: list[dict], regra: ResultadoRegra, avaliar_sem) -> tuple[str, str, int]:
+    """Ordena as ordens do dia pela contribuição à métrica da regra: valor com todas as ordens menos o valor sem a
+    ordem (positivo = piora; em regras de mínimo, o sinal é invertido). `avaliar_sem(alocacao)` devolve a lista de
+    resultados da carteira sem aquela ordem. Devolve (ordens_causa, ordem_principal, n_ordens)."""
+    chave = chave_episodio(regra.regra, regra.detalhe)
+    por_ordem: dict[str, float] = {}
+    marca: dict[str, bool] = {}
+    for a in alocacoes:
+        sem = _valor_da_regra(avaliar_sem(a), chave)
+        valor_sem = sem[0] if sem else 0.0
+        contrib = (regra.valor_pos_ordem - valor_sem) * (1 if regra.sentido == "max" else -1)
+        por_ordem[a["ordem_id"]] = por_ordem.get(a["ordem_id"], 0.0) + contrib
+        marca[a["ordem_id"]] = marca.get(a["ordem_id"], False) or a["override"]
+    ranque = sorted(por_ordem.items(), key=lambda kv: (-kv[1], kv[0]))
+    texto = ",".join(f"{o}{'(OVERRIDE)' if marca[o] else ''}({c:+.4f})" for o, c in ranque)
+    return texto, ranque[0][0], len(ranque)
 
 
 def rodar_pos_trade(serie: dict[str, pd.DataFrame], risco: pd.DataFrame, prec, painel: pd.DataFrame,
@@ -128,8 +156,7 @@ def rodar_pos_trade(serie: dict[str, pd.DataFrame], risco: pd.DataFrame, prec, p
             if r.status == VIOLADO:
                 violadas_hoje.add(chave)
                 if ep is None:
-                    classe = "PASSIVO"
-                    causa = ""
+                    classe, causa, principal, n_ord = "PASSIVO", "", "", 0
                     if (data, c) in ordens_dia and i > 0:
                         if cf is None:
                             cf = _contrafactual(serie, calc, fatores, meta, painel, volume, Q, pl, caixa_trades,
@@ -137,8 +164,11 @@ def rodar_pos_trade(serie: dict[str, pd.DataFrame], risco: pd.DataFrame, prec, p
                         violou_sem_ordens = any(
                             x.status == VIOLADO and chave_episodio(x.regra, x.detalhe) == chave[1:] for x in cf)
                         classe = "PASSIVO" if violou_sem_ordens else "ATIVO"
-                        causa = ordens_dia[(data, c)] if classe == "ATIVO" else ""
-                    ep = Episodio(c, r.regra, r.detalhe, data, i, classe, causa)
+                        if classe == "ATIVO":
+                            causa, principal, n_ord = ranquear_ordens(
+                                ordens_dia[(data, c)], r,
+                                lambda a: _regras_sem_ordem(a, calc, fatores, meta, Pv, vol, q, row, f, lim, i))
+                    ep = Episodio(c, r.regra, r.detalhe, data, i, classe, causa, None, principal, n_ord)
                     abertos[chave] = ep
                     todos.append(ep)
                 du = i - ep.i_inicio
@@ -155,6 +185,7 @@ def rodar_pos_trade(serie: dict[str, pd.DataFrame], risco: pd.DataFrame, prec, p
                 "du_desde_inicio": (i - ep.i_inicio) if ep else 0,
                 "prazo_du": prazo_reenquadramento_du if ep and ep.classe == "PASSIVO" else 0,
                 "vencido": bool(ep.vencido) if ep else False, "ordens_causa": ep.ordens_causa if ep else "",
+                "ordem_principal": ep.ordem_principal if ep else "", "n_ordens": ep.n_ordens if ep else 0,
             })
             if nivel:
                 alertas.append({"data": data, "fundo_cnpj": c, "regra": r.regra, "detalhe": r.detalhe,
@@ -162,7 +193,7 @@ def rodar_pos_trade(serie: dict[str, pd.DataFrame], risco: pd.DataFrame, prec, p
         for chave in [k for k in abertos if k[0] == c and k not in violadas_hoje]:
             abertos.pop(chave).fim = data  # reenquadrado
 
-    episodios = pd.DataFrame([vars(e) for e in todos])
+    episodios = pd.DataFrame([vars(e) for e in todos], columns=[f.name for f in fields(Episodio)])
     return {"enquadramento_diario": pd.DataFrame(linhas), "alertas": pd.DataFrame(alertas), "episodios": episodios}
 
 
@@ -182,3 +213,21 @@ def _contrafactual(serie, calc, fatores, meta, painel, volume, Q, pl, caixa_trad
     res = todas_as_regras(cart, f.regulamento)
     m = metricas_politica(calc, fatores, q_ant, i, cart.pl)
     return res + regras_politica(m["var_pct"], m["stress_pct"], lim)
+
+
+def _regras_sem_ordem(a: dict, calc, fatores, meta, Pv, vol, q, row, fundo, lim, i) -> list[ResultadoRegra]:
+    """Regras da carteira de fechamento retirando a alocação `a` (posição, caixa projetado e disponível)."""
+    from gestorasim.risco.motor import metricas_politica
+
+    sinal = 1 if a["lado"] == "C" else -1
+    q2 = dict(q)
+    q2[a["ticker"]] = q2.get(a["ticker"], 0) - sinal * a["quantidade"]
+    if q2[a["ticker"]] == 0:
+        del q2[a["ticker"]]
+    di = meta.loc[a["ticker"], "classe"] == "FUTURO_DI"
+    fluxo = 0.0 if di else -sinal * a["financeiro"]  # caixa que a ordem moveu
+    liq0 = PRAZO_LIQUIDACAO_DU[ClasseAtivo(meta.loc[a["ticker"], "classe"])] == 0
+    cart = montar_carteira(q2, float(row["caixa_projetado"]) - fluxo, meta, Pv, vol,
+                           float(row["caixa_disponivel"]) - (fluxo if liq0 else 0.0))
+    m = metricas_politica(calc, fatores, q2, i, cart.pl)
+    return todas_as_regras(cart, fundo.regulamento) + regras_politica(m["var_pct"], m["stress_pct"], lim)

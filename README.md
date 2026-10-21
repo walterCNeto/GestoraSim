@@ -10,6 +10,7 @@ python -m gestorasim.dados     # gera data/sim/*.parquet (seed=42) e imprime um 
 python -m gestorasim.boletagem # roda um dia de boletagem (ordens, pré-trade, execução, rateio)
 python -m gestorasim.mtm       # série de 504 pregões com MTM, eventos e P&L (~5 min)
 python -m gestorasim.risco     # risco diário e enquadramento pós-trade (usa a série em disco, se válida)
+python -m gestorasim.cota      # passivo (cotistas, cota, taxas, tributos) + conciliação com o administrador (XML)
 pytest
 ```
 
@@ -35,8 +36,8 @@ Convenções: nomes em português; números em relatórios e prints com 3 casas 
 - **Bloco 1:** `dominio` + `dados`.
 - **Bloco 2:** `boletagem`, `enquadramento` (pré-trade) e `posicao` mínima — ciclo de vida da ordem com trilha de auditoria, ordem agregada, execução simulada, rateio.
 - **Bloco 3:** `posicao` (ledger com liquidação D+2/D+0, eventos), `mtm` (ações, LTN, NTN-B, debêntures, DI), atribuição de P&L e série diária.
-- **Bloco 4 (atual):** `risco` (fatores, DV01/CS01, VaR paramétrico e histórico, ES, stress, backtest Kupiec/Basileia, liquidez) e `enquadramento/pos_trade` (regras do regulamento + política de risco, alertas SOFT/HARD, desenquadramento ativo/passivo/vencido). Fonte única de preço: `mtm`. Caixa remunerado; dividendos reduzem o preço na data ex.
-- **Bloco 5:** `conciliacao` e `cota` — conciliação posição × custódia, cota, aplicações/resgates.
+- **Bloco 4:** `risco` (fatores, DV01/CS01, VaR paramétrico e histórico, ES, stress, backtest Kupiec/Basileia, liquidez) e `enquadramento/pos_trade` (regras do regulamento + política de risco, alertas SOFT/HARD, desenquadramento ativo/passivo/vencido). Fonte única de preço: `mtm`. Caixa remunerado; dividendos reduzem o preço na data ex.
+- **Bloco 5 (atual):** `cota` (cotistas com conversão/pagamento por classe, cota bruta e líquida, taxa de administração e de performance com linha d'água, come-cotas, IR/IOF por lote FIFO), `conciliacao` (arquivo XML do administrador, divergências injetadas, quebras com diagnóstico, cota paralela), backtest limpo/sujo com burn-in e gestão de caixa/reenquadramento no gerador de ordens.
 - **Bloco 6:** `relatorios` e `app/` — relatórios e interface.
 
 ## Dados simulados (`data/sim/`, ignorado pelo git)

@@ -122,14 +122,18 @@ def ordens_violadoras(ledger: Ledger, fundos: list[Fundo], meta, precos: pd.Seri
 
 def gerar_ordens_exemplo(ledger: Ledger, fundos: list[Fundo], meta, precos: pd.Series, data,
                          seed: int, n_aleatorias: int = 6, com_override: bool = True,
-                         dia: int = 0) -> list[OrdemAgregada]:
-    """Vendas primeiro (liberam caixa), depois compras; dentro de cada lado, ordem de criação."""
+                         dia: int = 0, ids: _Seq | None = None) -> list[OrdemAgregada]:
+    """Vendas primeiro (liberam caixa), depois compras; dentro de cada lado, ordem de criação.
+    `ids`: contador compartilhado com outras fontes de ordens do mesmo dia (continua a numeração)."""
     rng = np.random.default_rng([seed, 300, dia])
     novo_id = _Seq()
     ordens = (ordens_rebalanceamento(ledger, fundos, meta, precos, data, rng, novo_id)
               + ordens_aleatorias(ledger, fundos, meta, precos, data, rng, novo_id, n_aleatorias)
               + ordens_violadoras(ledger, fundos, meta, precos, data, novo_id, com_override))
     ordens = sorted(ordens, key=lambda o: (o.lado.value != "V", o.id))
+    base = ids.n if ids is not None else 0
     for i, o in enumerate(ordens, 1):  # ids sequenciais na ordem de processamento
-        o.id = f"ORD{i:04d}"
+        o.id = f"ORD{base + i:04d}"
+    if ids is not None:
+        ids.n = base + len(ordens)
     return ordens

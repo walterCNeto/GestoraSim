@@ -8,28 +8,35 @@ from pathlib import Path
 
 import pandas as pd
 
-from gestorasim.boletagem.fluxo import Mesa
 from gestorasim.boletagem.execucao import gerar_volume
-from gestorasim.boletagem.geradores import gerar_ordens_exemplo
+from gestorasim.boletagem.fluxo import Mesa
+from gestorasim.cota.benchmark import indice_acoes, indice_cdi
+from gestorasim.cota.engine import PassivoFundo
+from gestorasim.cota.parametros import ParametrosPassivo
+from gestorasim.boletagem.gestao_caixa import ordens_gestao_caixa, ordens_reenquadramento
+from gestorasim.boletagem.geradores import _Seq, gerar_ordens_exemplo
 from gestorasim.dados import calendario, carregar_fundos, gerar_universo
 from gestorasim.dados.universo import DESTINO_PADRAO
 from gestorasim.enquadramento import montar_carteira
 from gestorasim.mtm.cache import impressao_digital, painel_oficial
 from gestorasim.mtm.estatistica import ewma_vol
 from gestorasim.mtm.precificacao import Precificador, ajuste_di
-from gestorasim.posicao import Ledger, ProcessadorEventos, gerar_carteira_inicial
+from gestorasim.posicao import PL_INICIAL, Ledger, ProcessadorEventos, gerar_carteira_inicial
 from gestorasim.posicao.caixa import SPREAD_CAIXA_NEGATIVO, juros_caixa
 from gestorasim.util import fmt3
 
 TOLERANCIA_FECHAMENTO = 1e-6
 COMPONENTES = ["efeito_preco", "carrego", "eventos", "ajuste_futuros", "custos", "juros_caixa"]
 TABELAS_SAIDA = ("posicoes_diarias", "mtm_diario", "pnl_atribuicao", "pl_diario", "ledger",
-                 "ordens_serie", "alocacoes_serie", "auditoria_serie")
+                 "ordens_serie", "alocacoes_serie", "auditoria_serie",
+                 "cotistas_mov", "lotes_cotistas", "provisoes", "cota_diaria", "tributos")
 
 
 def rodar_serie(seed: int = 42, destino: Path | str | None = None, inicio=None, fim=None,
                 passo_ordens: int = 5, com_ordens: bool = True, escrever: bool = True,
-                spread_caixa_negativo: float = SPREAD_CAIXA_NEGATIVO) -> dict[str, pd.DataFrame]:
+                spread_caixa_negativo: float = SPREAD_CAIXA_NEGATIVO, com_passivo: bool = True,
+                params_passivo: ParametrosPassivo | None = None,
+                com_politica_reenquadramento: bool = True) -> dict[str, pd.DataFrame]:
     """Roda todos os fundos de `inicio` a `fim` (default: o calendário inteiro).
 
     O caixa projetado do fechamento anterior rende CDI (saldo >= 0) ou paga CDI + `spread_caixa_negativo`.
@@ -51,7 +58,25 @@ def rodar_serie(seed: int = 42, destino: Path | str | None = None, inicio=None, 
     ledger = Ledger()
     gerar_carteira_inicial(ledger, fundos, meta, painel.iloc[i0].dropna(), datas[i0], seed)
     proc = ProcessadorEventos(ledger, tabelas["eventos"], prec.fracoes)
+    caixa_alvo = {f.cnpj: ledger.caixa_projetado(f.cnpj) / PL_INICIAL for f in fundos}  # alocação estratégica
+    reducao = None
+    if com_ordens and com_politica_reenquadramento:  # importações tardias: risco depende de mtm
+        from gestorasim.risco.fatores import construir_fatores
+        from gestorasim.risco.reenquadramento import ReducaoPolitica
+        from gestorasim.risco.sensibilidades import CalculadoraSens
+        fat = construir_fatores(tabelas, prec, painel)
+        reducao = ReducaoPolitica(CalculadoraSens(prec, fat, painel), fat)
     cnpjs = [f.cnpj for f in fundos]
+    params = params_passivo or ParametrosPassivo()
+    passivo: dict[str, PassivoFundo] = {}
+    bench: dict[str, object] = {}
+    if com_passivo:
+        cdi_idx, acoes_idx = indice_cdi(tabelas), indice_acoes(tabelas, painel, seed)
+        for f in fundos:
+            regras = params.regras[f.classe]
+            passivo[f.cnpj] = PassivoFundo(f, regras, params,
+                                           tabelas["fluxo_cotistas"].query("fundo_cnpj == @f.cnpj"))
+            bench[f.cnpj] = acoes_idx if regras.benchmark == "ACOES" else cdi_idx
     di_tickers = list(meta.index[meta["classe"] == "FUTURO_DI"])
     sigma_di = pd.DataFrame({tk: ewma_vol(painel[tk].pct_change().to_numpy()) for tk in di_tickers}, index=datas)
     tab_ordens: list[pd.DataFrame] = []
@@ -78,13 +103,25 @@ def rodar_serie(seed: int = 42, destino: Path | str | None = None, inicio=None, 
                     if meta.loc[tk, "classe"] == "FUTURO_DI":
                         aj = ajuste_di(P[tk], Pant[tk], estados[i - 1].cdi_aa, q)
                         ledger.creditar(data, c, tk, aj, "AJUSTE_DI_DIA", calendario.somar_du(data, 1))
-            if com_ordens and (i - i0) % passo_ordens == 0:
-                mesa = Mesa(ledger, fundos, meta, data, Pv, volume.iloc[i].dropna(), sigma_di.iloc[i].to_dict())
-                for o in gerar_ordens_exemplo(ledger, fundos, meta, Pv, data, seed, com_override=False, dia=i):
+            if com_ordens:
+                agenda = {c: passivo[c].saidas_previstas(data, [calendario.somar_du(data, k) for k in range(3)])
+                          for c in passivo}
+                mesa = Mesa(ledger, fundos, meta, data, Pv, volume.iloc[i].dropna(), sigma_di.iloc[i].to_dict(),
+                            agenda)
+                ids = _Seq()
+                # 1) caixa e reenquadramento (vendas antes); 2) ordens regulares a cada `passo_ordens` pregões
+                previas = (ordens_gestao_caixa(mesa, caixa_alvo, ids)
+                           + ordens_reenquadramento(mesa, ids, i, reducao))
+                for o in sorted(previas, key=lambda o: (o.lado.value != "V", o.id)):
                     ordens_estado[mesa.processar(o).estado.value] += 1
-                for nome, df in mesa.tabelas().items():
-                    if nome in ("ordens", "alocacoes", "auditoria"):
-                        tab_ordens.append((nome, df.assign(data_serie=data)))
+                if (i - i0) % passo_ordens == 0:
+                    for o in gerar_ordens_exemplo(ledger, fundos, meta, Pv, data, seed, com_override=False, dia=i,
+                                                  ids=ids):
+                        ordens_estado[mesa.processar(o).estado.value] += 1
+                if mesa.ordens:
+                    for nome, df in mesa.tabelas().items():
+                        if nome in ("ordens", "alocacoes", "auditoria"):
+                            tab_ordens.append((nome, df.assign(data_serie=data)))
             # ---- atribuição do dia
             for c in cnpjs:
                 for tk, q in q_prev[c].items():
@@ -105,6 +142,12 @@ def rodar_serie(seed: int = 42, destino: Path | str | None = None, inicio=None, 
         # ---- fechamento do dia
         for f in fundos:
             c = f.cnpj
+            fluxo_passivo = 0.0
+            if passivo:  # passivo: cotas, taxas, tributos; os fluxos de caixa entram no ledger
+                a_ativos = montar_carteira(ledger.quantidades(c), ledger.caixa_projetado(c), meta, Pv).pl
+                for valor, tipo in passivo[c].fechar_dia(data, a_ativos, bench[c][i]).fluxos:
+                    ledger.creditar(data, c, "CAIXA", valor, f"PASSIVO:{tipo}")
+                    fluxo_passivo += valor
             q = ledger.quantidades(c)
             cart = montar_carteira(q, ledger.caixa_projetado(c), meta, Pv)
             for tk, qt in q.items():
@@ -112,9 +155,10 @@ def rodar_serie(seed: int = 42, destino: Path | str | None = None, inicio=None, 
                 mtm_rows.append((data, c, tk, qt, float(P[tk]), float(cart.posicoes.loc[tk, "valor"]),
                                  float(cart.posicoes.loc[tk, "exposicao"]), fontes[tk]))
             soma = sum(sum(v.values()) for (cc, _), v in pnl.items() if cc == c)
-            var_pl = cart.pl - pl_prev[c] if i > i0 else 0.0
+            var_pl = cart.pl - pl_prev[c] if i > i0 else fluxo_passivo  # no 1º dia só entram aplicações do passivo
             pl_rows.append((data, c, nomes[c], ledger.caixa_disponivel(c, data), ledger.caixa_projetado(c),
-                            float(cart.posicoes["valor"].sum()), cart.pl, var_pl, soma, soma - var_pl))
+                            float(cart.posicoes["valor"].sum()), cart.pl, var_pl, soma, soma - (var_pl - fluxo_passivo),
+                            fluxo_passivo))
             pl_prev[c] = cart.pl
         for (c, tk), v in pnl.items():
             pnl_rows.append((data, c, tk, *[v[k] for k in COMPONENTES], sum(v.values())))
@@ -128,10 +172,11 @@ def rodar_serie(seed: int = 42, destino: Path | str | None = None, inicio=None, 
         "pnl_atribuicao": pd.DataFrame(pnl_rows, columns=["data", "fundo_cnpj", "ticker", *COMPONENTES, "total"]),
         "pl_diario": pd.DataFrame(pl_rows, columns=[
             "data", "fundo_cnpj", "fundo", "caixa_disponivel", "caixa_projetado", "valor_mercado", "pl",
-            "variacao_pl", "pnl_total", "erro_fechamento"]),
+            "variacao_pl", "pnl_total", "erro_fechamento", "fluxo_passivo"]),
         "ledger": ledger.para_df(),
         **{f"{nome}_serie": pd.concat([df for n, df in tab_ordens if n == nome], ignore_index=True)
            if tab_ordens else pd.DataFrame() for nome in ("ordens", "alocacoes", "auditoria")},
+        **_tabelas_passivo(passivo, datas[i1]),
         "ordens_por_estado": pd.DataFrame(sorted(ordens_estado.items()), columns=["estado", "n"]),
     }
     if escrever:
@@ -140,6 +185,18 @@ def rodar_serie(seed: int = 42, destino: Path | str | None = None, inicio=None, 
         (destino / "serie_meta.json").write_text(json.dumps(_meta(tabelas, seed, inicio, fim, passo_ordens, com_ordens,
                                                                 spread_caixa_negativo)))
     return saidas
+
+
+def _tabelas_passivo(passivo: dict[str, PassivoFundo], ultima_data) -> dict[str, pd.DataFrame]:
+    ps = list(passivo.values())
+    cat = lambda xs: pd.concat(xs, ignore_index=True) if xs else pd.DataFrame()  # noqa: E731
+    return {
+        "cotistas_mov": cat([p.mov for p in ps]),
+        "lotes_cotistas": cat([p.lotes_df(ultima_data) for p in ps]),
+        "provisoes": pd.DataFrame([r for p in ps for r in p.prov_rows]),
+        "cota_diaria": pd.DataFrame([r for p in ps for r in p.cota_rows]),
+        "tributos": pd.DataFrame([r for p in ps for r in p.tributos]),
+    }
 
 
 def _meta(tabelas, seed, inicio, fim, passo_ordens, com_ordens, spread) -> dict:

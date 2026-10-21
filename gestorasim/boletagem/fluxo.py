@@ -23,10 +23,11 @@ USUARIO_MESA = "mesa.execucao"
 class Mesa:
     def __init__(self, ledger: Ledger, fundos: list[Fundo], meta: pd.DataFrame, data,
                  precos: pd.Series, volume: pd.Series,
-                 sigma_di: dict[str, float] | None = None) -> None:
+                 sigma_di: dict[str, float] | None = None, agenda: dict[str, list[float]] | None = None) -> None:
         self.ledger, self.meta, self.data = ledger, meta, pd.Timestamp(data)
         self.fundos = {f.cnpj: f for f in fundos}
         self.precos, self.volume, self.sigma_di = precos, volume, sigma_di
+        self.agenda = agenda or {}  # saídas de caixa do passivo previstas em D, D+1, D+2 (negativas)
         self._datas_caixa = [calendario.somar_du(self.data, k) for k in range(3)]
         self.trilha = Trilha(datetime.combine(self.data.date(), datetime.min.time()).replace(hour=9))
         self.ordens: dict[str, OrdemAgregada] = {}
@@ -52,7 +53,7 @@ class Mesa:
             res = avaliar_pre_trade(self.ledger.quantidades(cnpj), self.ledger.caixa_projetado(cnpj),
                                     f.regulamento, self.meta, self.precos, ticker=ordem.ticker,
                                     lado=ordem.lado.value, quantidade=qtd, volume=self.volume,
-                                    perfil_caixa=[self.ledger.caixa_disponivel(cnpj, d) for d in self._datas_caixa],
+                                    perfil_caixa=self.perfil_caixa(cnpj),
                                     sigma_di=self.sigma_di)
             n_regras += len(res)
             for r in res:
@@ -80,6 +81,14 @@ class Mesa:
                                  f"{n_regras} regras avaliadas; {len(aprovados)} fundo(s) liberado(s), "
                                  f"{len(excluidos)} excluído(s)")
         return True
+
+    def perfil_caixa(self, cnpj: str) -> list[float]:
+        """Saldo liquidado esperado em D, D+1, D+2: ledger (com liquidações pendentes) + saídas do passivo."""
+        perfil, acum = [], 0.0
+        for k, d in enumerate(self._datas_caixa):
+            acum += self.agenda[cnpj][k] if cnpj in self.agenda else 0.0
+            perfil.append(self.ledger.caixa_disponivel(cnpj, d) + acum)
+        return perfil
 
     def liberar_override(self, ordem: OrdemAgregada, usuario: str, justificativa: str) -> None:
         self.trilha.transicionar(ordem, E.LIBERADA_OVERRIDE, usuario, justificativa)
